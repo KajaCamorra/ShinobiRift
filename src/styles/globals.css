@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Goldman:wght@400;700&family=Syne:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind utilities;
+@tailwind components;
+
+:root {
+  --dark-bg: #010003;
+  --bright-blue: #00e5ff;
+  --neon-pink: #e100ff;
+  --text: #e4e4e4;
+}
+
+@layer base {
+  body {
+    @apply font-syne bg-[#010003] text-[#e4e4e4] min-h-screen;
+  }
+
+  .nav-link {
+    @apply font-syne text-[#e4e4e4] no-underline text-base font-medium tracking-wider transition-colors duration-300 hover:text-[#00e5ff] relative;
+  }
+
+  .nav-link::after {
+    content: '';
+    @apply absolute bottom-[-5px] left-0 w-0 h-[1px] bg-[#00e5ff] transition-[width] duration-300;
+  }
+
+  .nav-link:hover::after {
+    @apply w-full;
+  }
+}
+
+.font-goldman {
+  font-family: 'Goldman', cursive;
+}

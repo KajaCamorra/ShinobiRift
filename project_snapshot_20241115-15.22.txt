@@ -1,0 +1,942 @@
+// ==================== src\app\(auth)\layout.tsx ====================
+export default function AuthLayout({
+    children,
+  }: {
+    children: React.ReactNode
+  }) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+        <main className="w-full max-w-md p-6">
+          {children}
+        </main>
+      </div>
+    )
+  }
+
+// ==================== src\app\(auth)\login\page.tsx ====================
+
+
+// ==================== src\app\(game)\game\page.tsx ====================
+
+
+// ==================== src\app\(game)\layout.tsx ====================
+export default function GameLayout({
+    children,
+  }: {
+    children: React.ReactNode
+  }) {
+    return (
+      <div className="min-h-screen flex bg-gray-900 text-white">
+        {/* We'll add ResizableSidePanel here later */}
+        <div className="flex-1">
+          {/* We'll add Header here later */}
+          <main className="p-4">
+            {children}
+          </main>
+          {/* We'll add BottomPanel here later */}
+        </div>
+      </div>
+    )
+  }
+
+// ==================== src\app\(landing)\layout.tsx ====================
+export default function LandingLayout({
+    children,
+  }: {
+    children: React.ReactNode
+  }) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white">
+        {/* We'll add header/navigation here later */}
+        <main>
+          {children}
+        </main>
+        {/* We'll add footer here later */}
+      </div>
+    )
+  }
+
+// ==================== src\app\(landing)\page.tsx ====================
+import Header from "@/components/landing/Header";
+import Hero from "@/components/landing/Hero";
+import Carousel from "@/components/landing/Carousel";
+import InfoGrid from "@/components/landing/InfoGrid";
+import Footer from "@/components/landing/Footer";
+
+export default function LandingPage() {
+  return (
+    <div className="min-h-screen bg-[#01000A]">
+      <Header />
+      <Hero />
+      <div 
+        className="relative bg-gradient-to-b from-[#01000A] via-transparent to-transparent"
+        style={{
+          backgroundImage: `url('/assets/images/landing/bg_darktextured.svg')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      >
+        <div className="relative max-w-[1400px] mx-auto">
+          <Carousel />
+          <InfoGrid />
+        </div>
+      </div>
+      <Footer />
+    </div>
+  );
+}
+
+
+// ==================== src\app\globals.css ====================
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --dark-bg: 1 0 10;        /* #01000A in RGB */
+  --bright-blue: 0 229 255; /* #00e5ff in RGB */
+  --neon-pink: 225 0 255;   /* #e100ff in RGB */
+  --text: 228 228 228;      /* #e4e4e4 in RGB */
+}
+
+@layer base {
+  html {
+    @apply bg-[#01000A];
+  }
+  
+  body {
+    @apply min-h-screen text-text font-syne;
+    background-color: #01000A;  /* Fallback */
+    background-image: linear-gradient(to bottom, rgba(1, 0, 10, 0.95), rgba(1, 0, 10, 0.9));
+  }
+
+  .nav-link {
+    @apply font-syne text-text/90 no-underline text-base font-medium 
+           tracking-wider transition-colors duration-300
+           hover:text-bright-blue;
+  }
+}
+
+@layer components {
+  .play-button {
+    @apply font-goldman px-8 py-3 bg-transparent 
+           border border-bright-blue text-bright-blue
+           uppercase tracking-wider relative
+           transition-all duration-300
+           hover:shadow-[0_0_15px_rgba(0,229,255,0.3)]
+           after:absolute after:inset-0
+           after:bg-bright-blue/5 after:opacity-0
+           hover:after:opacity-100 after:transition-opacity;
+  }
+
+  .carousel-wrapper {
+    @apply bg-black/30 backdrop-blur-sm
+           border border-bright-blue/10
+           shadow-[0_0_30px_rgba(0,229,255,0.05)]
+           p-8;
+  }
+
+  .neon-text {
+    @apply text-bright-blue drop-shadow-[0_0_10px_rgba(0,229,255,0.3)];
+  }
+
+  .glass-panel {
+    @apply bg-black/80 backdrop-blur-md
+           border border-bright-blue/10
+           shadow-[0_0_30px_rgba(0,229,255,0.05)];
+  }
+}
+
+// ==================== src\app\layout.tsx ====================
+import type { Metadata } from "next";
+import { Syne, Goldman } from "next/font/google";
+import "./globals.css";
+
+// Load fonts
+const syne = Syne({ 
+  subsets: ["latin"],
+  variable: "--font-syne",
+  display: "swap",
+});
+
+const goldman = Goldman({ 
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  variable: "--font-goldman",
+  display: "swap",
+});
+
+export const metadata: Metadata = {
+  title: "Shinobi Rift",
+  description: "A text-based ninja MMORPG set in a fractured reality",
+  icons: {
+    icon: "/favicon.ico",
+  },
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" className={`${syne.variable} ${goldman.variable}`}>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+      </head>
+      <body>
+        {children}
+      </body>
+    </html>
+  );
+}
+
+// ==================== src\components\landing\Carousel\index.tsx ====================
+"use client";
+
+import { useState, useEffect, useCallback } from 'react';
+import { cn } from '@/lib/utils';
+
+type CarouselImage = {
+  src: string;
+  alt: string;
+  caption: string;
+};
+
+const IMAGES: CarouselImage[] = [
+  {
+    src: '/assets/images/landing/forest1.png',
+    alt: 'Game Screenshot 1',
+    caption: 'Master ancient ninja techniques in a world torn by dimensional rifts',
+  },
+  {
+    src: '/assets/images/landing/city1.png',
+    alt: 'Game Screenshot 2',
+    caption: 'Explore vast landscapes filled with mystery and danger',
+  },
+  {
+    src: '/assets/images/landing/fluxzone2.png',
+    alt: 'Game Screenshot 3',
+    caption: 'Engage in tactical combat with other players',
+  },
+];
+
+export default function Carousel() {
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  const nextSlide = useCallback(() => {
+    setCurrentSlide((prev) => (prev + 1) % IMAGES.length);
+  }, []);
+
+  // Auto-advance slides
+  useEffect(() => {
+    const timer = setInterval(nextSlide, 5000);
+    return () => clearInterval(timer);
+  }, [nextSlide]);
+
+  return (
+    <section className="w-full py-16">
+      <div className="max-w-[1400px] mx-auto px-8">
+        <div className="relative bg-bright-blue/5 backdrop-blur-sm border border-bright-blue/10 
+                      shadow-[0_0_30px_rgba(0,229,255,0.05)] p-8
+                      before:absolute before:inset-0 
+                      before:from-[#01000A]/20 before:to-transparent before:-z-10">
+          <div className="relative h-[70vh] md:h-[600px] overflow-hidden">
+            {/* Slides */}
+            <div
+              className="flex transition-transform duration-500 ease-in-out h-full"
+              style={{ transform: `translateX(-${currentSlide * 100}%)` }}
+            >
+              {IMAGES.map((image, index) => (
+                <CarouselSlide key={index} {...image} />
+              ))}
+            </div>
+
+            {/* Navigation Dots */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 z-10">
+              {IMAGES.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setCurrentSlide(index)}
+                  className={cn(
+                    "w-12 h-[3px] transition-all duration-300",
+                    currentSlide === index
+                      ? "bg-bright-blue shadow-[0_0_10px_rgba(0,229,255,0.5)]"
+                      : "bg-bright-blue/30"
+                  )}
+                  aria-label={`Go to slide ${index + 1}`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CarouselSlide({ src, alt, caption }: CarouselImage) {
+  return (
+    <div className="min-w-full h-full flex flex-col items-center gap-6">
+      <div className="relative w-full h-[85%] border border-bright-blue/10">
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <p className="neon-text text-lg text-center font-medium">
+        {caption}
+      </p>
+    </div>
+  );
+}
+
+// ==================== src\components\landing\Footer\FooterLink.tsx ====================
+interface FooterLinkProps {
+    href: string;
+    children: React.ReactNode;
+  }
+  
+  export default function FooterLink({ href, children }: FooterLinkProps) {
+    return (
+      <a
+        href={href}
+        className="text-text/70 no-underline text-sm transition-colors duration-300 
+                   hover:text-bright-blue"
+      >
+        {children}
+      </a>
+    );
+  }
+
+// ==================== src\components\landing\Footer\FooterSection.tsx ====================
+interface FooterSectionProps {
+    title: string;
+    children: React.ReactNode;
+  }
+  
+  export default function FooterSection({ title, children }: FooterSectionProps) {
+    return (
+      <div className="footer-section">
+        <h3 className="font-goldman text-bright-blue mb-4 text-lg">
+          {title}
+        </h3>
+        {children}
+      </div>
+    );
+  }
+
+// ==================== src\components\landing\Footer\index.tsx ====================
+import { MessageSquare } from 'lucide-react';
+import FooterSection from './FooterSection';
+import FooterLink from './FooterLink';
+
+const FOOTER_LINKS = {
+  legal: [
+    { href: '#', text: 'Terms of Service' },
+    { href: '#', text: 'Privacy Policy' },
+    { href: '#', text: 'Cookie Policy' },
+    { href: '#', text: 'GDPR Rights' },
+    { href: '#', text: 'Impressum' },
+  ],
+  support: [
+    { href: '#', text: 'Help Center' },
+    { href: '#', text: 'Bug Reports' },
+    { href: '#', text: 'Contact Us' },
+    { href: '#', text: 'Community Guidelines' },
+  ],
+  connect: [
+    { href: '#', text: 'Discord', icon: MessageSquare },
+  ],
+} as const;
+
+export default function Footer() {
+  return (
+    <footer className="bg-dark-bg/95 border-t border-bright-blue/10 pt-16 pb-8">
+      {/* Main Footer Content */}
+      <div className="max-w-[1400px] mx-auto px-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr] gap-8 mb-16">
+          {/* Legal Section */}
+          <FooterSection title="Legal">
+            <div className="flex flex-col gap-2">
+              {FOOTER_LINKS.legal.map(link => (
+                <FooterLink key={link.text} href={link.href}>
+                  {link.text}
+                </FooterLink>
+              ))}
+            </div>
+          </FooterSection>
+
+          {/* Support Section */}
+          <FooterSection title="Support">
+            <div className="flex flex-col gap-2">
+              {FOOTER_LINKS.support.map(link => (
+                <FooterLink key={link.text} href={link.href}>
+                  {link.text}
+                </FooterLink>
+              ))}
+            </div>
+          </FooterSection>
+
+          {/* Connect Section */}
+          <FooterSection title="Connect">
+            <div className="flex flex-col gap-2">
+              {FOOTER_LINKS.connect.map(({ text, href, icon: Icon }) => (
+                <FooterLink key={text} href={href}>
+                  <div className="flex items-center gap-2">
+                    <Icon className="w-4 h-4" />
+                    <span>{text}</span>
+                  </div>
+                </FooterLink>
+              ))}
+            </div>
+          </FooterSection>
+        </div>
+
+        {/* Copyright Notice */}
+        <div className="pt-8 border-t border-bright-blue/10 text-center">
+          <p className="text-text/50 text-sm">
+            Shinobi Rift © {new Date().getFullYear()} Wasabi Solutions.
+          </p>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+// ==================== src\components\landing\Header\index.tsx ====================
+"use client";
+
+import { useState, useEffect } from "react";
+import BurgerButton from "@/components/ui/BurgerButton";
+import MobileMenu, { MenuItem, MenuDivider } from "@/components/ui/MobileMenu";
+import { cn } from "@/lib/utils";
+import { FaDiscord, FaGoogle, FaFacebookF } from 'react-icons/fa';
+
+type AuthProvider = 'discord' | 'google' | 'facebook';
+
+interface AuthButtonProps {
+  provider: AuthProvider;
+}
+
+export default function Header() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    handleScroll();
+
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  return (
+    <header
+      className={cn(
+        "fixed top-0 left-0 w-[calc(100%-15px)] z-[1002]",
+        "transition-all duration-300",
+        "border-b border-bright-blue/10",
+        "bg-gradient-to-b from-dark-bg/65 via-dark-bg/50 to-dark-bg/30",
+        "backdrop-blur-md",
+        isScrolled
+          ? "h-[60px] py-2 bg-dark-bg/85"
+          : "h-[100px] py-6",
+      )}>
+      <div className="max-w-[1400px] mx-auto px-8 flex justify-between items-center h-full">
+        {/* Mobile Menu Button */}
+        <BurgerButton
+          isOpen={isMenuOpen}
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          className="md:hidden"
+        />
+
+        {/* Desktop Navigation */}
+        <nav className="hidden md:flex gap-8 items-center">
+          <NavigationLinks />
+        </nav>
+
+        {/* Play Now Button & Dropdown */}
+        <div className="relative">
+          <PlayNowButton
+            isOpen={isDropdownOpen}
+            onMouseEnter={() => setIsDropdownOpen(true)}
+            onMouseLeave={() => setIsDropdownOpen(false)}
+          />
+          <AuthDropdown
+            isOpen={isDropdownOpen}
+            onMouseEnter={() => setIsDropdownOpen(true)}
+            onMouseLeave={() => setIsDropdownOpen(false)}
+          />
+        </div>
+      </div>
+
+      {/* Mobile Menu */}
+      <MobileMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)}>
+        <div className="flex flex-col">
+          <NavigationLinks mobile />
+          <MenuDivider />
+          <div className="p-4 space-y-2">
+            <AuthButtons />
+          </div>
+        </div>
+      </MobileMenu>
+    </header>
+  );
+}
+
+function NavigationLinks({ mobile = false }: { mobile?: boolean }) {
+  const links = ['Home', 'Blog', 'Lore', 'Rules'];
+
+  return (
+    <>
+      {links.map(link => (
+        mobile ? (
+          <MenuItem key={link} href="#">{link}</MenuItem>
+        ) : (
+          <a key={link} href="#" className="nav-link">{link}</a>
+        )
+      ))}
+    </>
+  );
+}
+
+function PlayNowButton({ isOpen, ...props }: { isOpen: boolean } & React.HTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button 
+      {...props}
+      className={cn(
+        "font-goldman px-8 py-3",
+        "bg-transparent border border-bright-blue text-bright-blue",
+        "uppercase tracking-wider relative",
+        "transition-all duration-300",
+        "hover:shadow-[0_0_15px_rgba(0,229,255,0.3)]",
+        "after:absolute after:inset-0",
+        "after:bg-bright-blue/5 after:opacity-0",
+        "hover:after:opacity-100 after:transition-opacity"
+      )}
+    >
+      PLAY NOW ▾
+    </button>
+  );
+}
+
+function AuthButton({ provider }: AuthButtonProps) {
+  const icons = {
+    discord: <FaDiscord className="w-5 h-5" />,
+    google: <FaGoogle className="w-5 h-5" />,
+    facebook: <FaFacebookF className="w-5 h-5" />
+  };
+
+  const colors = {
+    discord: 'hover:border-[#7289DA] hover:bg-[rgba(114,137,218,0.1)]',
+    google: 'hover:border-[#DB4437] hover:bg-[rgba(219,68,55,0.1)]',
+    facebook: 'hover:border-[#4267B2] hover:bg-[rgba(66,103,178,0.1)]'
+  };
+
+  return (
+    <button
+      className={cn(
+        "flex items-center gap-4 w-full p-4 my-1",
+        "bg-bright-blue/5 border border-bright-blue/20",
+        "text-text cursor-pointer transition-all duration-200",
+        "hover:translate-x-1",
+        colors[provider]
+      )}
+    >
+      {icons[provider]}
+      <span>Sign in with {provider.charAt(0).toUpperCase() + provider.slice(1)}</span>
+    </button>
+  );
+}
+
+function AuthButtons() {
+  return (
+    <div className="flex flex-col gap-1">
+      {(['discord', 'google', 'facebook'] as const).map((provider) => (
+        <AuthButton key={provider} provider={provider} />
+      ))}
+    </div>
+  );
+}
+
+function AuthDropdown({ isOpen, ...props }: { isOpen: boolean } & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div 
+      {...props}
+      className={cn(
+        "absolute top-[calc(100%+5px)] right-0",
+        "bg-dark-bg/95 backdrop-blur-md",
+        "min-w-[250px] p-2",
+        "opacity-0 invisible transition-all duration-300",
+        "border border-bright-blue/10",
+        "shadow-[0_0_20px_rgba(0,229,255,0.1)]",
+        isOpen && "opacity-100 visible"
+      )}
+    >
+      <AuthButtons />
+    </div>
+  );
+}
+
+// ==================== src\components\landing\Hero\index.tsx ====================
+export default function Hero() {
+  return (
+    <section className="relative h-screen flex flex-col justify-center items-center text-center">
+      {/* Background Image with Overlay */}
+      <div 
+        className="absolute inset-0 z-10"
+        style={{
+          background: `linear-gradient(to bottom, rgba(1, 0, 10, 0.7), rgba(1, 0, 10, 0.5)), url('/assets/images/landing/bg14.png')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      />
+
+      {/* Bottom Gradient Fade */}
+      <div className="absolute bottom-0 left-0 right-0 h-[150px] bg-gradient-to-t from-[#01000A] to-transparent z-20" />
+
+      {/* Content */}
+      <div className="relative z-30 px-4 max-w-[1400px] mx-auto w-full">
+        <h1 className="font-goldman text-5xl md:text-7xl mb-4 text-bright-blue 
+                     tracking-wider drop-shadow-[0_0_20px_rgba(0,229,255,0.5)]">
+          SHINOBI RIFT
+        </h1>
+        
+        <p className="text-lg md:text-xl max-w-[700px] mx-auto mb-10 tracking-wide leading-relaxed font-normal">
+          Enter a world where ancient ninja arts clash with dimensional chaos. 
+          Master your skills, forge alliances, and shape the destiny of a fractured reality.
+        </p>
+
+        <a 
+          href="#" 
+          className="inline-block relative overflow-hidden
+                   font-syne font-semibold px-12 py-5 text-lg
+                   text-bright-blue bg-bright-blue/10 border-2 border-bright-blue
+                   cursor-pointer transition-all duration-300 tracking-wider uppercase
+                   hover:bg-bright-blue hover:text-[#01000A]
+                   hover:shadow-[0_0_30px_rgba(0,229,255,0.4)]"
+        >
+          Begin Your Journey
+        </a>
+      </div>
+    </section>
+  );
+}
+
+// ==================== src\components\landing\InfoGrid\index.tsx ====================
+import LoreSection from './LoreSection';
+import NewsSection from './NewsSection';
+
+export default function InfoGrid() {
+  return (
+    <div className="w-full max-w-[1400px] mx-auto px-8 grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-8 mb-16">
+      <LoreSection />
+      <NewsSection />
+    </div>
+  );
+}
+
+
+// ==================== src\components\landing\InfoGrid\LoreSection.tsx ====================
+import { ArrowRight } from 'lucide-react';
+
+export default function LoreSection() {
+    return (
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-bright-blue/5 p-10 
+                        border border-bright-blue/10 shadow-[0_0_30px_rgba(0,229,255,0.05)]">
+        <div className="flex flex-col justify-center">
+          <h2 className="font-goldman text-4xl text-bright-blue mb-6 tracking-wide">
+            A World Transformed
+          </h2>
+          <div className="space-y-4 text-lg leading-relaxed">
+            <p>
+              In the wake of the Great Unraveling, reality itself has been torn asunder. 
+              Ancient ninja clans, once guardians of dimensional stability, now navigate 
+              a world where the laws of physics bend and time itself flows like water.
+            </p>
+            <p>
+              Choose your path, forge alliances, and decide the fate of this fractured reality. 
+              Will you seek to restore the old order, or embrace the chaos to forge something 
+              entirely new?
+            </p>
+          </div>
+          <a href="#" className="group inline-flex items-center text-bright-blue mt-6 
+                              transition-all duration-300 hover:text-shadow-[0_0_10px_rgba(0,229,255,0.5)]">
+            <span className="relative">
+              Discover The Full Story
+              <span className="absolute bottom-0 left-0 w-0 h-[1px] bg-bright-blue 
+                           transition-all duration-300 group-hover:w-full"/>
+            </span>
+            <ArrowRight className="ml-2 w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
+          </a>
+        </div>
+        <div className="h-full border border-bright-blue/20">
+          <img 
+            src="/assets/images/landing/rift1.png"
+            alt="Dimensional Rift"
+            className="w-full h-full object-cover"
+          />
+        </div>
+      </section>
+    );
+  }
+
+// ==================== src\components\landing\InfoGrid\NewsSection.tsx ====================
+type NewsItem = {
+    date: string;
+    title: string;
+    description: string;
+  };
+  
+  const NEWS_ITEMS: NewsItem[] = [
+    {
+      date: "November 9, 2024",
+      title: "New Dimension Discovered",
+      description: "Explore the Crystal Wastes in our latest content update!"
+    },
+    {
+      date: "November 7, 2024",
+      title: "Balance Changes",
+      description: "Adjustments to combat mechanics and skill progression."
+    },
+    {
+      date: "November 5, 2024",
+      title: "Community Event",
+      description: "Join the Shadow Tournament this weekend!"
+    }
+  ];
+  
+  export default function NewsSection() {
+    return (
+      <aside className="bg-neon-pink/5 p-10 border border-neon-pink/10 flex flex-col justify-center">
+        <h2 className="font-goldman text-3xl text-neon-pink mb-8 tracking-wide">
+          Latest Updates
+        </h2>
+        <div className="space-y-8">
+          {NEWS_ITEMS.map((item, index) => (
+            <NewsItem 
+              key={index}
+              date={item.date}
+              title={item.title}
+              description={item.description}
+            />
+          ))}
+        </div>
+      </aside>
+    );
+  }
+  
+  function NewsItem({ date, title, description }: NewsItem) {
+    return (
+      <article className="pb-8 border-b border-neon-pink/20 last:border-0 last:pb-0">
+        <time className="block text-sm text-neon-pink mb-2 font-medium">
+          {date}
+        </time>
+        <h3 className="text-xl mb-2 font-semibold">
+          {title}
+        </h3>
+        <p className="text-text/80">
+          {description}
+        </p>
+      </article>
+    );
+  }
+
+// ==================== src\components\ui\BurgerButton\index.tsx ====================
+"use client";
+
+import { cn } from "@/lib/utils";
+
+interface BurgerButtonProps {
+  isOpen: boolean;
+  onClick: () => void;
+  className?: string;
+}
+
+export default function BurgerButton({ isOpen, onClick, className }: BurgerButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex flex-col justify-between w-[30px] h-[20px] bg-transparent border-none cursor-pointer p-0 z-[1003]",
+        className
+      )}
+      aria-label={isOpen ? "Close menu" : "Open menu"}
+      aria-expanded={isOpen}
+    >
+      <span 
+        className={cn(
+          "w-full h-[2px] bg-[#00e5ff] shadow-[0_0_5px_rgba(0,229,255,0.5)] transition-all duration-300",
+          isOpen && "translate-y-[9px] rotate-45"
+        )}
+      />
+      <span 
+        className={cn(
+          "w-full h-[2px] bg-[#00e5ff] shadow-[0_0_5px_rgba(0,229,255,0.5)] transition-all duration-300",
+          isOpen && "opacity-0"
+        )}
+      />
+      <span 
+        className={cn(
+          "w-full h-[2px] bg-[#00e5ff] shadow-[0_0_5px_rgba(0,229,255,0.5)] transition-all duration-300",
+          isOpen && "-translate-y-[9px] -rotate-45"
+        )}
+      />
+    </button>
+  );
+}
+
+// ==================== src\components\ui\MobileMenu\index.tsx ====================
+"use client";
+
+import { cn } from "@/lib/utils";
+
+interface MobileMenuProps {
+  isOpen: boolean;
+  onClose: () => void;
+  className?: string;
+  children: React.ReactNode;
+}
+
+export default function MobileMenu({ isOpen, onClose, className, children }: MobileMenuProps) {
+  return (
+    <>
+      <nav
+        className={cn(
+          "fixed top-[60px] left-0 w-[250px] h-[calc(100vh-60px)]",
+          "bg-[rgba(1,0,3,0.95)] border-r border-[rgba(0,229,255,0.1)]",
+          "backdrop-blur-[10px] transition-transform duration-300 p-4 z-[1001]",
+          isOpen ? "translate-x-0" : "-translate-x-full",
+          className
+        )}
+      >
+        {children}
+      </nav>
+
+      {/* Overlay */}
+      <div
+        onClick={onClose}
+        className={cn(
+          "fixed inset-0 bg-[rgba(1,0,3,0.7)] backdrop-blur-[3px]",
+          "transition-all duration-300 z-[1000]",
+          isOpen ? "opacity-100 visible" : "opacity-0 invisible"
+        )}
+      />
+    </>
+  );
+}
+
+// Menu item component for consistent styling
+export function MenuItem({ 
+  href, 
+  children, 
+  className 
+}: { 
+  href: string; 
+  children: React.ReactNode; 
+  className?: string;
+}) {
+  return (
+    <a
+      href={href}
+      className={cn(
+        "block p-4 text-[#e4e4e4] no-underline",
+        "border-b border-[rgba(0,229,255,0.1)]",
+        "transition-all duration-300 hover:bg-[rgba(0,229,255,0.1)] hover:text-[#00e5ff]",
+        className
+      )}
+    >
+      {children}
+    </a>
+  );
+}
+
+export function MenuDivider({ className }: { className?: string }) {
+  return (
+    <div 
+      className={cn(
+        "h-[1px] bg-[rgba(0,229,255,0.1)] my-2",
+        className
+      )} 
+    />
+  );
+}
+
+// ==================== src\contexts\AuthContext\index.tsx ====================
+
+
+// ==================== src\contexts\AuthContext\types.ts ====================
+
+
+// ==================== src\contexts\GameLayoutContext\index.tsx ====================
+
+
+// ==================== src\contexts\GameLayoutContext\types.ts ====================
+
+
+// ==================== src\hooks\useAuth.ts ====================
+
+
+// ==================== src\hooks\useGameLayout.ts ====================
+
+
+// ==================== src\hooks\useResizablePanel.ts ====================
+
+
+// ==================== src\lib\utils\index.ts ====================
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+// ==================== src\lib\utils\storage.ts ====================
+
+
+// ==================== src\styles\globals.css ====================
+@import url('https://fonts.googleapis.com/css2?family=Goldman:wght@400;700&family=Syne:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind utilities;
+@tailwind components;
+
+:root {
+  --dark-bg: #010003;
+  --bright-blue: #00e5ff;
+  --neon-pink: #e100ff;
+  --text: #e4e4e4;
+}
+
+@layer base {
+  body {
+    @apply font-syne bg-[#010003] text-[#e4e4e4] min-h-screen;
+  }
+
+  .nav-link {
+    @apply font-syne text-[#e4e4e4] no-underline text-base font-medium tracking-wider transition-colors duration-300 hover:text-[#00e5ff] relative;
+  }
+
+  .nav-link::after {
+    content: '';
+    @apply absolute bottom-[-5px] left-0 w-0 h-[1px] bg-[#00e5ff] transition-[width] duration-300;
+  }
+
+  .nav-link:hover::after {
+    @apply w-full;
+  }
+}
+
+.font-goldman {
+  font-family: 'Goldman', cursive;
+}
+
+// ==================== src\styles\tailwind.css ====================
+
+

@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --dark-bg: 1 0 10;        /* #01000A in RGB */
+  --bright-blue: 0 229 255; /* #00e5ff in RGB */
+  --neon-pink: 225 0 255;   /* #e100ff in RGB */
+  --text: 228 228 228;      /* #e4e4e4 in RGB */
+}
+
+@layer base {
+  html {
+    @apply bg-[#01000A];
+  }
+  
+  body {
+    @apply min-h-screen text-text font-syne;
+    background-color: #01000A;  /* Fallback */
+    background-image: linear-gradient(to bottom, rgba(1, 0, 10, 0.95), rgba(1, 0, 10, 0.9));
+  }
+
+  .nav-link {
+    @apply font-syne text-text/90 no-underline text-base font-medium 
+           tracking-wider transition-colors duration-300
+           hover:text-bright-blue;
+  }
+}
+
+@layer components {
+  .play-button {
+    @apply font-goldman px-8 py-3 bg-transparent 
+           border border-bright-blue text-bright-blue
+           uppercase tracking-wider relative
+           transition-all duration-300
+           hover:shadow-[0_0_15px_rgba(0,229,255,0.3)]
+           after:absolute after:inset-0
+           after:bg-bright-blue/5 after:opacity-0
+           hover:after:opacity-100 after:transition-opacity;
+  }
+
+  .carousel-wrapper {
+    @apply bg-black/30 backdrop-blur-sm
+           border border-bright-blue/10
+           shadow-[0_0_30px_rgba(0,229,255,0.05)]
+           p-8;
+  }
+
+  .neon-text {
+    @apply text-bright-blue drop-shadow-[0_0_10px_rgba(0,229,255,0.3)];
+  }
+
+  .glass-panel {
+    @apply bg-black/80 backdrop-blur-md
+           border border-bright-blue/10
+           shadow-[0_0_30px_rgba(0,229,255,0.05)];
+  }
+}
