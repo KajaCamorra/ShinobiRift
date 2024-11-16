@@ -2,30 +2,21 @@
 "use client";
 
 import { useAuth } from '@/hooks/useAuth';
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 export default function GamePage() {
   const { user, isLoading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    // If not loading and no user, redirect to login
-    if (!isLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, isLoading, router]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-bright-blue">Loading...</div>
+        <LoadingSpinner />
       </div>
     );
   }
 
   if (!user) {
-    return null; // Will redirect in useEffect
+    return null;
   }
 
   return (

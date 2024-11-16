@@ -2,7 +2,7 @@ import Header from "@/components/landing/Header";
 import Hero from "@/components/landing/Hero";
 import Carousel from "@/components/landing/Carousel";
 import InfoGrid from "@/components/landing/InfoGrid";
-import Footer from "@/components/landing/Footer";
+import Footer from "@/components/shared/Footer";
 
 export default function LandingPage() {
   return (

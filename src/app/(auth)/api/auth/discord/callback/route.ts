@@ -12,7 +12,7 @@ function createResponse(type: 'SUCCESS' | 'ERROR', data: any, baseUrl: string) {
     ? { message: data.message }
     : data;
 
-  return new Response(`
+  const response = new Response(`
     <!DOCTYPE html>
     <html>
       <head><title>Authentication ${type.toLowerCase()}</title></head>
@@ -29,6 +29,13 @@ function createResponse(type: 'SUCCESS' | 'ERROR', data: any, baseUrl: string) {
   `, {
     headers: { 'Content-Type': 'text/html' }
   });
+
+  // If success, set the session cookie
+  if (type === 'SUCCESS' && data?.data?.SessionTicket) {
+    response.headers.append('Set-Cookie', `playfab_session=${data.data.SessionTicket}; Path=/; HttpOnly; SameSite=Lax`);
+  }
+
+  return response;
 }
 
 export async function GET(request: NextRequest) {

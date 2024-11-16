@@ -7,6 +7,10 @@
   --bright-blue: 0 229 255; /* #00e5ff in RGB */
   --neon-pink: 225 0 255;   /* #e100ff in RGB */
   --text: 228 228 228;      /* #e4e4e4 in RGB */
+  --header-height: 60px;
+  --nav-width: 60px;
+  --panel-width: 20%;
+  --bottom-height: 200px;
 }
 
 @layer base {
