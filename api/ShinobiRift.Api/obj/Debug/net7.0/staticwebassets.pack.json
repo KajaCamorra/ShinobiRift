@@ -1,0 +1,25 @@
+{
+  "Files": [
+    {
+      "Id": "E:\\Onedrive\\07_Projects\\shinobi-rift\\api\\ShinobiRift.Api\\wwwroot\\test.html",
+      "PackagePath": "staticwebassets\\test.html"
+    },
+    {
+      "Id": "obj\\Debug\\net7.0\\staticwebassets\\msbuild.ShinobiRift.Api.Microsoft.AspNetCore.StaticWebAssets.props",
+      "PackagePath": "build\\Microsoft.AspNetCore.StaticWebAssets.props"
+    },
+    {
+      "Id": "obj\\Debug\\net7.0\\staticwebassets\\msbuild.build.ShinobiRift.Api.props",
+      "PackagePath": "build\\ShinobiRift.Api.props"
+    },
+    {
+      "Id": "obj\\Debug\\net7.0\\staticwebassets\\msbuild.buildMultiTargeting.ShinobiRift.Api.props",
+      "PackagePath": "buildMultiTargeting\\ShinobiRift.Api.props"
+    },
+    {
+      "Id": "obj\\Debug\\net7.0\\staticwebassets\\msbuild.buildTransitive.ShinobiRift.Api.props",
+      "PackagePath": "buildTransitive\\ShinobiRift.Api.props"
+    }
+  ],
+  "ElementsToRemove": []
+}

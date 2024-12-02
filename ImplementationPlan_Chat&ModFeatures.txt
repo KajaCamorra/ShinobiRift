@@ -1,0 +1,327 @@
+# Shinobi Rift Chat System - Core Message & Formatting System
+
+## Message System Overview
+
+The chat system will be implemented using SignalR for real-time communication, allowing players to send and receive messages instantly. Every message in the system can contain regular text, formatted text, links, mentions, and media content, all within the same message. The chat will be implemented with special consideration for cost optimization when users have multiple tabs or browser windows open. Instead of allowing each tab to create its own SignalR connection, which would multiply our connection costs unnecessarily, we'll implement a shared connection system using Web Workers.
+
+## Connection Management System
+
+The system uses a Shared Worker that manages a single SignalR connection for all tabs of our site open in the same browser. This worker acts as a central hub, maintaining the WebSocket connection and distributing messages to all tabs through a broadcast channel system.
+
+When a user opens our site in a new tab, instead of establishing a new SignalR connection, the tab connects to the shared worker. The worker maintains a list of all active tabs and their states. Only one actual SignalR connection is maintained per browser, regardless of how many tabs are open.
+
+The system differentiates between active tabs (those where the user is actually playing or in battle) and viewer tabs (those just open in the background or showing other parts of the site). Active tabs receive real-time updates directly through the shared SignalR connection, while viewer tabs receive updates through a broadcast channel, which is a more efficient way to share data between tabs.
+
+For example, if a user has three tabs open:
+1. One in an active battle
+2. One showing their inventory
+3. One on the marketplace
+
+Only one SignalR connection would be maintained, primarily serving the battle tab. The inventory and marketplace tabs would receive their updates through the broadcast channel system, significantly reducing our SignalR connection load and associated costs.
+
+If a user switches tabs (e.g., finishes their battle and starts a new one in another tab), the system smoothly transitions the "active" status between tabs without needing to establish new connections. The shared worker handles all this coordination, ensuring we maintain real-time communication where needed while minimizing unnecessary connections.
+
+To prevent issues with stale connections or browser quirks, the system includes automatic recovery mechanisms. If the shared worker detects that it's lost its SignalR connection, it can automatically reconnect without disrupting the user experience. Similarly, if a tab becomes unresponsive or closes unexpectedly, the worker automatically cleans up and adjusts its tab management accordingly.
+
+This entire system operates transparently to the user - they get the same real-time chat experience regardless of how many tabs they have open, but we significantly reduce our SignalR connection costs by maintaining only one connection per browser rather than one per tab.
+
+### Message Formatting & Display
+
+Players will have a rich text editor with a formatting toolbar above the message input field. The system uses a markdown-like syntax that can either be typed directly or applied via toolbar buttons:
+
+Text Formatting Options:
+- Bold text is created by surrounding text with double asterisks: `**bold**`
+- Italic text uses single asterisks: `*italic*`
+- Underlined text uses double underscores: `__underlined__`
+
+When creating links, instead of showing the full URL in the chat, players can create custom link text like this:
+`[Click here for guide](https://shinobirift.com/guides/123)`. In the chat, this would appear as a clickable "Click here for guide" text that opens the URL when clicked.
+
+Media Integration works through special tags:
+- Images: `!image[](https://imageurl.com/pic.jpg)`
+- YouTube Videos: `!video[](https://youtube.com/watch?v=xxx)`
+
+For images, the system:
+- Supports gif, jpg, png, mp4, and webp formats
+- Automatically resizes images to fit the chat width if they're too large
+- Displays smaller images at their original size
+- Does not require any hover or click actions to view the full image
+
+YouTube videos are embedded directly in the chat feed:
+- Appear as an inline player
+- Automatically sized to fit the chat width
+- Playable directly in the chat without opening new tabs
+
+All of this formatting is stored in its raw form in the database. For example, a message might be stored as:
+`Hey **everyone**! Check out this cool !image[](https://pics.com/cool.jpg) I found at [this site](https://cool.com)!`
+
+The frontend then processes this formatting when displaying messages, converting the markdown-style tags into proper HTML formatting and embedded content.
+
+# Message Formatting & Rendering System
+
+The chat system needs a robust message processing system to transform our markdown-style formatting into properly rendered HTML content. When a message arrives from the SignalR connection or is retrieved from the database, it contains raw text with our custom markdown-style tags that need to be processed before display.
+
+Our message processor handles this transformation systematically. It receives raw messages containing various formatting elements - from basic text styling like bold and italic to more complex elements like custom-text links, image embeds, and mentions. For example, a raw message might contain a mix of formatting like "Hey **everyone**! Check out this cool !image[](https://pics.com/cool.jpg) I found at [this site](https://cool.com)!".
+
+The processor parses this text in a specific order, handling each type of formatting element. It starts with basic text styling (bold, italic, underline), then processes links where users can specify custom display text instead of showing the full URL. After that, it handles special elements like image embeds, video embeds, and @mentions. Each element is converted into its appropriate HTML representation while maintaining proper security measures.
+
+For security, all URLs undergo validation before rendering, all HTML characters are properly escaped to prevent XSS attacks, and image URLs are checked against our list of supported formats. YouTube URLs receive special validation to ensure they're legitimate embed links before being converted into inline video players.
+
+To optimize performance, especially during high-chat-volume periods, the system implements a caching mechanism. Once a message is processed, its rendered HTML version is cached in memory, keyed by the message ID. This cache has a limited size, typically holding the last 100 messages, and entries are cleared when messages are edited or deleted. When loading chat history, the system processes multiple messages in batches, reusing the parser instance and sharing security checks across the batch to improve efficiency.
+
+### Database Storage
+
+Messages are stored in a `chat_messages` table with this structure:
+```sql
+chat_messages
+- message_id (PK)
+- channel_id
+- user_id
+- content (the raw message text including all formatting tags)
+- created_at
+- expires_at (created_at + 24 hours)
+- last_edited_at
+- deleted_at
+- deleted_by_id
+- mentioned_user_id (optional, for @mentions)
+```
+
+The `content` field stores the complete message with all formatting exactly as the user typed it or as the formatting toolbar created it. This approach:
+- Keeps the database structure simple
+- Makes it easy to edit messages (just update one field)
+- Allows the frontend to handle all formatting rendering
+- Makes it simple to add new formatting options later
+
+To prevent SQL injection and other security issues:
+1. All user input is escaped and sanitized before storage
+2. URLs are validated for:
+   - Proper formatting
+   - Allowed domains
+   - Supported file types for images
+3. All content is sanitized again during rendering to prevent XSS attacks
+
+### Message Editing & History
+
+When a user edits their message, we store the previous version in a separate history table:
+```sql
+message_history
+- history_id (PK)
+- message_id (FK)
+- previous_content
+- changed_at
+- changed_by_id
+- change_type (edit/delete)
+- expires_at (matches parent message's expires_at)
+```
+
+Regular users only see the current version of messages. However, when a message is reported, moderators can see the edit history as part of the report review process. For each edited message in the report timeframe, they see:
+- The current message content
+- Previous versions listed below in italics
+- Timestamps for each edit
+- A different color for previous versions to distinguish them
+
+### Mentions System
+
+The system allows exactly one @mention per message to prevent spam and make notification handling simpler. When a user types '@', an autocomplete dropdown appears showing online users matching the typed text.
+
+Each message can have a single mentioned user, stored in the `mentioned_user_id` field. This approach:
+- Makes it easy to highlight mentions for the relevant user
+- Simplifies notification handling
+- Allows quick filtering of messages where a user was mentioned
+- Prevents mention spam
+
+## Custom Command System
+
+The custom command system is designed to replicate your Discord bot's fun interaction commands like !spank and !rob. Instead of marking regular user messages as commands, the system uses a dedicated system/bot account to send these messages, similar to how a Discord bot would respond.
+
+### Command Storage & Structure
+
+Commands are stored in a simple template table:
+```sql
+command_templates
+- template_id (PK)
+- command_name (e.g., "spank")
+- template_text (e.g., "{user} gives {target} a spank so loud it could be mistaken for applause")
+```
+
+### Command Processing
+
+When a user types a command like "!spank @Eden-RE", the system:
+1. Identifies this as a command
+2. Validates the target user exists
+3. Randomly selects an unused template for this command
+4. Replaces the placeholder tags:
+   - {user} becomes the command user's name
+   - {target} becomes the target user's name
+5. Creates a new message from the system account containing the processed text
+6. Stores this like any other message in the chat_messages table
+7. Records the usage to prevent template repetition
+
+Because command responses are stored as regular messages from the system account:
+- Players can block the system account to opt-out of seeing command messages
+- It's easy to filter for command messages in the frontend
+- Command cooldowns can be managed by checking the system account's recent messages
+- The messages integrate naturally with the chat flow
+
+### Emoji Reactions
+
+Any message can receive emoji reactions from users, stored in:
+```sql
+message_reactions
+- reaction_id (PK)
+- message_id (FK)
+- user_id
+- emoji
+- created_at
+```
+
+## Message Retention & Report System
+
+The chat system maintains all messages and their edit history for 24 hours in the standard chat_messages and message_history tables. After 24 hours, messages are automatically deleted unless they've been flagged as part of a report.
+
+When messages are flagged in a report, they're copied to permanent storage:
+```sql
+report_flagged_messages
+- flag_id (PK)
+- report_id (FK)
+- original_message_id
+- content
+- user_id
+- created_at
+- flagged_by_mod_id
+- flag_reason
+- spawned_report_id (nullable, for branched reports)
+
+report_message_versions
+- version_id (PK)
+- flagged_message_id (FK)
+- content
+- changed_at
+- changed_by_id
+- change_type
+```
+
+### Report Context Handling
+
+When reviewing a report, moderators see:
+1. For active chat periods:
+   - ~15 minutes of context before the reported message
+   - All users' messages in that timeframe
+   - Edit history for all included messages
+
+2. For slower chat periods:
+   - Last X messages before the report
+   - May extend beyond 30 minutes if chat is very slow
+   - Sufficient context for decision-making
+
+Moderators can:
+- Flag additional messages as relevant
+- Create branched reports for other users
+- View full edit histories
+- See deleted messages
+- Track related incidents
+
+## Moderation System
+
+The moderation system is designed to ensure consistent punishment across moderators while reducing individual decision burden. Instead of moderators deciding punishments, they only assess incident severity, with the system calculating appropriate punishments based on history.
+
+### Report Handling
+
+When a message is reported, the system creates a moderation case:
+```sql
+moderation_cases
+- case_id (PK)
+- reported_message_id (FK)
+- reporter_id
+- offense_type (harassment, botting, etc)
+- severity_rating (0-5)
+- mod_comment
+- tags (for automated warning message generation)
+- created_at
+- reviewed_by_id
+- status (pending/reviewed)
+```
+
+The moderator sees:
+1. The reported message
+2. Context from the surrounding chat:
+   - If chat is active: ~15 minutes before the reported message
+   - If chat is slow: Last X messages even if older than 30 minutes
+   - Shows all messages from all users in the timeframe
+3. For each message in the timeframe:
+   - Current message content
+   - If edited: Previous versions shown below in italics + different color
+   - Timestamps for each edit
+   - Deletion status and who deleted it
+
+### Severity Assessment
+
+Moderators only need to:
+1. Confirm the type of offense (harassment, botting, etc.)
+2. Rate the severity (0-5 scale)
+3. Add relevant tags for automated messaging
+4. Leave a comment explaining their decision
+
+The system then:
+1. Checks for previous infractions within the relevant timeframe:
+   - Different offenses have different tracking periods
+   - Botting: Tracked indefinitely
+   - Harassment: Last 1-2 months
+2. Calculates final severity considering:
+   - Number of previous incidents
+   - Time between incidents
+   - Previous incident severity
+   - First-time offense reduction factor
+3. Determines punishment based on calculated severity:
+   - 1 = Warning
+   - 2 = 1-day silence/ban
+   - 3 = 7-day silence/ban
+   - 4 = 1-month silence/ban
+   - 5 = Permanent silence/ban
+
+All level 5 severity cases (whether individual rating or calculated) are automatically:
+1. Applied immediately
+2. Flagged for admin review
+3. Can be reduced by admins if needed
+
+This is tracked in:
+```sql
+user_infractions
+- infraction_id (PK)
+- user_id
+- case_id (FK)
+- calculated_severity (1-5)
+- punishment_type (warning/silence/ban)
+- duration
+- created_at
+- expires_at
+- reviewed_by_admin (boolean)
+- reduced_punishment (boolean)
+```
+
+### Probation Period
+
+Each new incident within a user's probation period:
+- Extends the probation period
+- Factors into future punishment calculations
+- Has decreasing impact as time passes
+
+The exact calculation formula is still to be determined, but will consider:
+- Number of incidents in the sliding time window
+- Severity of each incident
+- Time between incidents
+- Decreasing multiplication factor as time passes
+
+### Moderation Guidelines
+
+The system will include:
+- Extensive scenario list with severity ratings
+- AI and human-rated example cases
+- Clear guidelines in the mod handbook
+- Example scenarios in the public rules
+
+This ensures:
+- Consistent moderation across the team
+- Clear expectations for players
+- Transparent punishment system
+- Fair and escalating consequences

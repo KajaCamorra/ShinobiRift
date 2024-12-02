@@ -1,0 +1,233 @@
+-- Create schemas
+CREATE SCHEMA IF NOT EXISTS communication;
+CREATE SCHEMA IF NOT EXISTS moderation;
+CREATE SCHEMA IF NOT EXISTS game;
+CREATE SCHEMA IF NOT EXISTS analytics;
+
+-- Communication Schema Tables
+CREATE TABLE communication.messages (
+    message_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    channel_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    message_type VARCHAR(50) NOT NULL CHECK (message_type IN ('chat', 'direct', 'command', 'system')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    last_edited_at TIMESTAMP WITH TIME ZONE,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    deleted_by_id VARCHAR(255),
+    mentioned_user_id VARCHAR(255)
+);
+
+CREATE TABLE communication.message_history (
+    history_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID NOT NULL REFERENCES communication.messages(message_id) ON DELETE CASCADE,
+    previous_content TEXT NOT NULL,
+    changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    changed_by_id VARCHAR(255) NOT NULL,
+    change_type VARCHAR(50) NOT NULL CHECK (change_type IN ('edit', 'delete')),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+CREATE TABLE communication.reactions (
+    reaction_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID NOT NULL REFERENCES communication.messages(message_id) ON DELETE CASCADE,
+    user_id VARCHAR(255) NOT NULL,
+    emoji VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(message_id, user_id, emoji)
+);
+
+CREATE TABLE communication.command_templates (
+    template_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    command_name VARCHAR(100) NOT NULL,
+    template_text TEXT NOT NULL,
+    UNIQUE(command_name, template_text)
+);
+
+-- Moderation Schema Tables
+CREATE TABLE moderation.infraction_types (
+    type_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    tracking_duration INTERVAL NOT NULL, -- How long this type of infraction is tracked for
+    base_severity INTEGER NOT NULL CHECK (base_severity BETWEEN 1 AND 5),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE moderation.flagged_messages (
+    flag_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    report_id UUID NOT NULL,
+    original_message_id UUID NOT NULL REFERENCES communication.messages(message_id),
+    content TEXT NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    flagged_by_mod_id VARCHAR(255) NOT NULL,
+    flag_reason TEXT,
+    spawned_report_id UUID
+);
+
+CREATE TABLE moderation.message_versions (
+    version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flagged_message_id UUID NOT NULL REFERENCES moderation.flagged_messages(flag_id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    changed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    changed_by_id VARCHAR(255) NOT NULL,
+    change_type VARCHAR(50) NOT NULL CHECK (change_type IN ('edit', 'delete'))
+);
+
+CREATE TABLE moderation.cases (
+    case_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reported_message_id UUID NOT NULL REFERENCES communication.messages(message_id),
+    reporter_id VARCHAR(255) NOT NULL,
+    mod_comment TEXT,
+    tags TEXT[],
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    reviewed_by_id VARCHAR(255),
+    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'reviewed')),
+    final_calculated_severity INTEGER CHECK (final_calculated_severity BETWEEN 1 AND 5),
+    punishment_type VARCHAR(50) CHECK (punishment_type IN ('warning', 'silence', 'ban')),
+    punishment_duration INTERVAL
+);
+
+-- Junction table for cases and their multiple infraction types
+CREATE TABLE moderation.case_infractions (
+    case_infraction_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL REFERENCES moderation.cases(case_id) ON DELETE CASCADE,
+    infraction_type_id UUID NOT NULL REFERENCES moderation.infraction_types(type_id),
+    severity_rating INTEGER NOT NULL CHECK (severity_rating BETWEEN 1 AND 5),
+    mod_notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(case_id, infraction_type_id)
+);
+
+CREATE TABLE moderation.user_infractions (
+    user_infraction_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id VARCHAR(255) NOT NULL,
+    case_id UUID NOT NULL REFERENCES moderation.cases(case_id),
+    case_infraction_id UUID NOT NULL REFERENCES moderation.case_infractions(case_infraction_id),
+    infraction_type_id UUID NOT NULL REFERENCES moderation.infraction_types(type_id),
+    severity_rating INTEGER NOT NULL CHECK (severity_rating BETWEEN 1 AND 5),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    reviewed_by_admin BOOLEAN DEFAULT FALSE,
+    reduced_severity BOOLEAN DEFAULT FALSE
+);
+
+-- Indexes for performance
+CREATE INDEX idx_messages_channel_id ON communication.messages(channel_id);
+CREATE INDEX idx_messages_user_id ON communication.messages(user_id);
+CREATE INDEX idx_messages_message_type ON communication.messages(message_type);
+CREATE INDEX idx_messages_mentioned_user_id ON communication.messages(mentioned_user_id);
+CREATE INDEX idx_messages_expires_at ON communication.messages(expires_at);
+CREATE INDEX idx_message_history_message_id ON communication.message_history(message_id);
+CREATE INDEX idx_reactions_message_id ON communication.reactions(message_id);
+CREATE INDEX idx_reactions_user_id ON communication.reactions(user_id);
+CREATE INDEX idx_flagged_messages_report_id ON moderation.flagged_messages(report_id);
+CREATE INDEX idx_cases_status ON moderation.cases(status);
+CREATE INDEX idx_case_infractions_case_id ON moderation.case_infractions(case_id);
+CREATE INDEX idx_case_infractions_type_id ON moderation.case_infractions(infraction_type_id);
+CREATE INDEX idx_user_infractions_user_id ON moderation.user_infractions(user_id);
+CREATE INDEX idx_user_infractions_type_id ON moderation.user_infractions(infraction_type_id);
+CREATE INDEX idx_user_infractions_expires_at ON moderation.user_infractions(expires_at);
+
+-- Function to automatically set message expiration
+CREATE OR REPLACE FUNCTION communication.set_message_expiration()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.expires_at := NEW.created_at + INTERVAL '24 hours';
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to set message expiration on insert
+CREATE TRIGGER tr_set_message_expiration
+    BEFORE INSERT ON communication.messages
+    FOR EACH ROW
+    EXECUTE FUNCTION communication.set_message_expiration();
+
+-- Function to copy message history expiration
+CREATE OR REPLACE FUNCTION communication.copy_message_expiration()
+RETURNS TRIGGER AS $$
+BEGIN
+    SELECT expires_at INTO NEW.expires_at
+    FROM communication.messages
+    WHERE message_id = NEW.message_id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to copy message expiration to history
+CREATE TRIGGER tr_copy_message_expiration
+    BEFORE INSERT ON communication.message_history
+    FOR EACH ROW
+    EXECUTE FUNCTION communication.copy_message_expiration();
+
+-- Function to calculate final case severity based on multiple infractions
+CREATE OR REPLACE FUNCTION moderation.calculate_case_severity()
+RETURNS TRIGGER AS $$
+DECLARE
+    total_severity INTEGER := 0;
+    infraction_count INTEGER := 0;
+    severity_multiplier FLOAT := 1.0;
+BEGIN
+    -- Count total infractions and their severities
+    SELECT 
+        COUNT(*),
+        COALESCE(SUM(severity_rating), 0)
+    INTO 
+        infraction_count,
+        total_severity
+    FROM moderation.case_infractions
+    WHERE case_id = NEW.case_id;
+
+    -- Apply multiplier based on number of infractions
+    -- Each additional infraction increases severity by 50%
+    severity_multiplier := 1.0 + ((infraction_count - 1) * 0.5);
+    
+    -- Calculate final severity (rounded to nearest integer)
+    NEW.final_calculated_severity := LEAST(5, GREATEST(1, 
+        ROUND((total_severity::FLOAT / infraction_count) * severity_multiplier)
+    ));
+
+    -- Set punishment type and duration based on final severity
+    CASE NEW.final_calculated_severity
+        WHEN 1 THEN 
+            NEW.punishment_type := 'warning';
+            NEW.punishment_duration := NULL;
+        WHEN 2 THEN 
+            NEW.punishment_type := 'silence';
+            NEW.punishment_duration := INTERVAL '1 day';
+        WHEN 3 THEN 
+            NEW.punishment_type := 'silence';
+            NEW.punishment_duration := INTERVAL '7 days';
+        WHEN 4 THEN 
+            NEW.punishment_type := 'ban';
+            NEW.punishment_duration := INTERVAL '30 days';
+        WHEN 5 THEN 
+            NEW.punishment_type := 'ban';
+            NEW.punishment_duration := NULL; -- Permanent ban
+    END CASE;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to calculate final case severity when case infractions change
+CREATE TRIGGER tr_calculate_case_severity
+    BEFORE UPDATE ON moderation.cases
+    FOR EACH ROW
+    WHEN (NEW.status = 'reviewed')
+    EXECUTE FUNCTION moderation.calculate_case_severity();
+
+-- Insert some default infraction types
+INSERT INTO moderation.infraction_types 
+    (name, description, tracking_duration, base_severity) 
+VALUES 
+    ('Harassment', 'Targeted harassment or bullying of other players', INTERVAL '60 days', 3),
+    ('Hate Speech', 'Discriminatory or hateful content', INTERVAL '90 days', 4),
+    ('Spam', 'Excessive message spam or flooding', INTERVAL '30 days', 2),
+    ('Botting', 'Use of automated programs or scripts', INTERVAL '365 days', 5),
+    ('Foul Language', 'Excessive profanity or inappropriate language', INTERVAL '30 days', 2),
+    ('Trolling', 'Intentionally disruptive behavior', INTERVAL '45 days', 3);

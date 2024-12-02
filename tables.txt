@@ -1,0 +1,134 @@
+CREATE TABLE messages (
+    message_id SERIAL PRIMARY KEY,
+    channel_id VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    content TEXT NOT NULL,
+    author_id VARCHAR(50) NOT NULL,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (author_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE message_mentions (
+    mention_id SERIAL PRIMARY KEY,
+    message_id INTEGER NOT NULL,
+    mentioned_by_id VARCHAR(50) NOT NULL,
+    mentioned_user_id VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    is_read BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (message_id) REFERENCES messages(message_id),
+    FOREIGN KEY (mentioned_user_id) REFERENCES users(user_id),
+    FOREIGN KEY (mentioned_by_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE message_history (
+    history_id SERIAL PRIMARY KEY,
+    message_id INTEGER NOT NULL,
+    previous_content TEXT NOT NULL,
+    change_type VARCHAR(10) CHECK (change_type IN ('edit', 'delete')),
+    changed_by_id VARCHAR(50) NOT NULL,
+    changed_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (message_id) REFERENCES messages(message_id),
+    FOREIGN KEY (changed_by_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE reports (
+    report_id SERIAL PRIMARY KEY,
+    target_id VARCHAR(50) NOT NULL,
+    reporter_id VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP,
+    created_by_id VARCHAR(50) NOT NULL,
+    assigned_to_id VARCHAR(50),
+    status VARCHAR(20) CHECK (status IN ('open', 'assigned', 'waiting', 'review', 'closed')),
+    review_reason TEXT,
+    FOREIGN KEY (target_id) REFERENCES users(user_id),
+    FOREIGN KEY (reporter_id) REFERENCES users(user_id),
+    FOREIGN KEY (created_by_id) REFERENCES users(user_id),
+    FOREIGN KEY (assigned_to_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE report_status_history (
+    history_id SERIAL PRIMARY KEY,
+    report_id INTEGER NOT NULL,
+    changed_by_id VARCHAR(50) NOT NULL,
+    previous_status VARCHAR(20),
+    new_status VARCHAR(20) NOT NULL,
+    changed_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (report_id) REFERENCES reports(report_id),
+    FOREIGN KEY (changed_by_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE report_messages (
+    message_id SERIAL PRIMARY KEY,
+    report_id INTEGER NOT NULL,
+    original_message_id INTEGER,
+    content TEXT,
+    author_id VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    state VARCHAR(10) CHECK (state IN ('original', 'edit', 'deleted')),
+    parent_id INTEGER,
+    flagged_by_id VARCHAR(50) NOT NULL,
+    flagged_at TIMESTAMP NOT NULL,
+    unflagged_at TIMESTAMP,
+    unflagged_by_id VARCHAR(50),
+    mod_comment TEXT,
+    FOREIGN KEY (report_id) REFERENCES reports(report_id),
+    FOREIGN KEY (original_message_id) REFERENCES messages(message_id),
+    FOREIGN KEY (parent_id) REFERENCES report_messages(message_id),
+    FOREIGN KEY (author_id) REFERENCES users(user_id),
+    FOREIGN KEY (flagged_by_id) REFERENCES users(user_id),
+    FOREIGN KEY (unflagged_by_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE infraction_types (
+    type_id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP,
+    created_by_id VARCHAR(50) NOT NULL,
+    updated_by_id VARCHAR(50),
+    is_deleted BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (created_by_id) REFERENCES users(user_id),
+    FOREIGN KEY (updated_by_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE infraction_cases (
+    case_id SERIAL PRIMARY KEY,
+    report_id INTEGER NOT NULL,
+    type_id INTEGER NOT NULL,
+    created_by_id VARCHAR(50) NOT NULL,
+    severity INTEGER CHECK (severity BETWEEN 0 AND 5),
+    comment TEXT,
+    tags TEXT[],
+    created_at TIMESTAMP NOT NULL,
+    reviewed_by_id VARCHAR(50),
+    reviewed_at TIMESTAMP,
+    adjusted_severity INTEGER,
+    reviewer_comment TEXT,
+    FOREIGN KEY (report_id) REFERENCES reports(report_id),
+    FOREIGN KEY (type_id) REFERENCES infraction_types(type_id),
+    FOREIGN KEY (created_by_id) REFERENCES users(user_id),
+    FOREIGN KEY (reviewed_by_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE punishments (
+    punishment_id SERIAL PRIMARY KEY,
+    case_id INTEGER NOT NULL,
+    type VARCHAR(20) CHECK (type IN ('warning', 'silence', 'ban')),
+    adjusted_type VARCHAR(20),
+    target_id VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP,
+    adjusted_expires_at TIMESTAMP,
+    is_reduced BOOLEAN DEFAULT FALSE,
+    reviewed_by_id VARCHAR(50),
+    reviewed_at TIMESTAMP,
+    reviewer_comment TEXT,
+    FOREIGN KEY (case_id) REFERENCES infraction_cases(case_id),
+    FOREIGN KEY (target_id) REFERENCES users(user_id),
+    FOREIGN KEY (reduced_by_id) REFERENCES users(user_id)
+);

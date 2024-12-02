@@ -1,0 +1,34 @@
+{
+  "kind": "collectionType",
+  "collectionName": "dialogues",
+  "info": {
+    "singularName": "dialogue",
+    "pluralName": "dialogues",
+    "displayName": "Dialogue",
+    "description": ""
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "Title": {
+      "type": "string"
+    },
+    "Type": {
+      "type": "enumeration",
+      "enum": [
+        "story",
+        "characterCreation",
+        "quest",
+        "event"
+      ]
+    },
+    "Content": {
+      "type": "json"
+    },
+    "NpcId": {
+      "type": "string"
+    }
+  }
+}

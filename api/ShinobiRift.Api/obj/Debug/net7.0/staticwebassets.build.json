@@ -1,0 +1,37 @@
+{
+  "Version": 1,
+  "Hash": "Bdt2rIHAanKqxPkIBAAw4+9f6fP5zohFEiLs2cfiugQ=",
+  "Source": "ShinobiRift.Api",
+  "BasePath": "_content/ShinobiRift.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [
+    {
+      "Name": "ShinobiRift.Api\\wwwroot",
+      "Source": "ShinobiRift.Api",
+      "ContentRoot": "E:\\Onedrive\\07_Projects\\shinobi-rift\\api\\ShinobiRift.Api\\wwwroot\\",
+      "BasePath": "_content/ShinobiRift.Api",
+      "Pattern": "**"
+    }
+  ],
+  "Assets": [
+    {
+      "Identity": "E:\\Onedrive\\07_Projects\\shinobi-rift\\api\\ShinobiRift.Api\\wwwroot\\test.html",
+      "SourceId": "ShinobiRift.Api",
+      "SourceType": "Discovered",
+      "ContentRoot": "E:\\Onedrive\\07_Projects\\shinobi-rift\\api\\ShinobiRift.Api\\wwwroot\\",
+      "BasePath": "_content/ShinobiRift.Api",
+      "RelativePath": "test.html",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Primary",
+      "RelatedAsset": "",
+      "AssetTraitName": "",
+      "AssetTraitValue": "",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "wwwroot\\test.html"
+    }
+  ]
+}

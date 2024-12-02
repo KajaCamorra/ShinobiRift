@@ -1,0 +1,4111 @@
+// ==================== src\app\(auth)\api\auth\discord\callback\route.ts ====================
+import { NextRequest } from 'next/server';
+import { handleDiscordLogin } from '@/lib/auth/discord';
+
+export const runtime = 'nodejs';
+
+function createResponse(type: 'SUCCESS' | 'ERROR', data: any, baseUrl: string) {
+  console.log(`Creating ${type} response with data:`, data);
+  
+  const safeData = type === 'ERROR' && data instanceof Error
+    ? { message: data.message }
+    : data;
+
+  return new Response(`
+    <!DOCTYPE html>
+    <html>
+      <head><title>Authentication ${type.toLowerCase()}</title></head>
+      <body>
+        <script>
+          window.opener.postMessage({
+            type: '${type}',
+            data: ${JSON.stringify(safeData)}
+          }, '${baseUrl}');
+          setTimeout(() => window.close(), 1000);
+        </script>
+      </body>
+    </html>
+  `, {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+
+export async function GET(request: NextRequest) {
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
+  
+  try {
+    console.log('Starting Discord callback...');
+    
+    const searchParams = request.nextUrl.searchParams;
+    const code = searchParams.get('code');
+
+    if (!code) {
+      throw new Error('No code parameter received');
+    }
+
+    console.log('Exchanging code for token...');
+    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID!,
+        client_secret: process.env.DISCORD_CLIENT_SECRET!,
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: `${baseUrl}/api/auth/discord/callback`
+      })
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.error('Token exchange failed:', errorText);
+      throw new Error(`Failed to exchange code for token: ${errorText}`);
+    }
+
+    const tokenData = await tokenResponse.json();
+    console.log('Token received, getting user info...');
+
+    const result = await handleDiscordLogin(tokenData.access_token);
+    console.log('Login successful!');
+    
+    return createResponse('SUCCESS', result, baseUrl);
+
+  } catch (error) {
+    console.error('Auth error:', error);
+    return createResponse(
+      'ERROR',
+      error instanceof Error ? error : new Error('Authentication failed'),
+      baseUrl
+    );
+  }
+}
+
+
+// ==================== src\app\(auth)\api\auth\discord\route.ts ====================
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  console.log('Starting Discord auth...');
+
+  // Generate a random state
+  const state = Math.random().toString(36).substring(7);
+
+  // Create Discord OAuth URL
+  const params = new URLSearchParams({
+    client_id: process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '',
+    redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/discord/callback`,
+    response_type: 'code',
+    scope: 'identify email',
+    state
+  });
+
+  const discordUrl = `https://discord.com/api/oauth2/authorize?${params}`;
+  console.log('Discord URL:', discordUrl);
+
+  // Redirect to Discord OAuth
+  return NextResponse.redirect(discordUrl);
+}
+
+
+// ==================== src\app\(auth)\layout.tsx ====================
+export default function AuthLayout({
+    children,
+  }: {
+    children: React.ReactNode
+  }) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+        <main className="w-full max-w-md p-6">
+          {children}
+        </main>
+      </div>
+    )
+  }
+
+// ==================== src\app\(auth)\login\page.tsx ====================
+'use client';
+
+import { DiscordLoginButton } from '@/components/auth/DiscordLoginButton';
+import { DebugLoginButton } from '@/components/auth/DebugLoginButton';
+
+export default function LoginPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-full max-w-md p-8 space-y-6">
+        <h1 className="text-3xl font-bold text-center">Login to Shinobi Rift</h1>
+        <DiscordLoginButton />
+        <DebugLoginButton />
+      </div>
+    </div>
+  );
+}
+
+
+// ==================== src\app\(game)\game\page.tsx ====================
+"use client";
+
+import { useAuth } from '@/hooks/useAuth';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { useGameLayout } from '@/contexts/GameLayoutContext';
+
+export default function GamePage() {
+  const { user, loading } = useAuth();
+  const { activePanel } = useGameLayout();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  return (
+    <div className="min-h-screen text-text p-4" style={{ background: 'none' }}>
+      <h1 className="text-2xl font-goldman text-bright-blue mb-4">
+        Welcome, {user.displayName}!
+      </h1>
+      <div className="flex flex-col space-y-4">
+        <div className="bg-dark-bg/50 rounded-lg p-4 border border-neon-pink/20">
+          <h2 className="text-xl font-goldman text-neon-pink mb-2">Current Location</h2>
+          <p>Crystal Wastes</p>
+          <div className="mt-2 text-sm text-text/70">
+            <p>Energy Level: 85%</p>
+            <p>Active Effects: Speed Boost (2:45), Shadow Veil (1:30)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ==================== src\app\(game)\layout.tsx ====================
+"use client";
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
+import Header from '@/components/game/layout/Header';
+import ResizableSidePanel from '@/components/game/layout/ResizableSidePanel';
+import MainContent from '@/components/game/layout/MainContent';
+import BottomPanel from '@/components/game/layout/BottomPanel';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { GameLayoutProvider } from '@/contexts/GameLayoutContext';
+
+export default function GameLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/');
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  return (
+    <GameLayoutProvider>
+      <div 
+        className="min-h-screen flex flex-col bg-dark-bg"
+        style={{
+          background: `linear-gradient(rgba(1, 0, 10, 0.7), rgba(1, 0, 10, 0.5)), url('/assets/images/landing/bg14.png')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed',
+        }}
+      >
+        <Header />
+        <div className="flex-1 flex mt-[60px] relative">
+          <ResizableSidePanel />
+          <MainContent>
+            {children}
+            <BottomPanel />
+          </MainContent>
+        </div>
+      </div>
+    </GameLayoutProvider>
+  );
+}
+
+
+// ==================== src\app\(game)\users\components\FilterPanel.tsx ====================
+"use client";
+
+import React from 'react';
+import { Search } from 'lucide-react';
+import { FilterPanelProps } from '../types';
+
+export const FilterPanel: React.FC<FilterPanelProps> = ({
+  filters,
+  onFiltersChange,
+}) => {
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onFiltersChange({
+      ...filters,
+      search: e.target.value,
+    });
+  };
+
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    onFiltersChange({
+      ...filters,
+      status: e.target.value as 'all' | 'online' | 'offline',
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-4 bg-dark-bg/50 border border-bright-blue/20 rounded-lg mb-6">
+      {/* Search Input */}
+      <div className="relative flex-1 max-w-md">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-bright-blue/50" />
+        <input
+          type="text"
+          value={filters.search}
+          onChange={handleSearchChange}
+          placeholder="Search users..."
+          className="w-full pl-10 pr-4 py-2 bg-dark-bg/50 border border-bright-blue/20 rounded-lg
+                   text-text placeholder-text/50 focus:outline-none focus:border-bright-blue/50
+                   transition-colors"
+        />
+      </div>
+
+      {/* Status Filter */}
+      <div className="flex items-center gap-2">
+        <label htmlFor="status-filter" className="text-text whitespace-nowrap">
+          Status:
+        </label>
+        <select
+          id="status-filter"
+          value={filters.status}
+          onChange={handleStatusChange}
+          className="px-4 py-2 bg-dark-bg/50 border border-bright-blue/20 rounded-lg
+                   text-text focus:outline-none focus:border-bright-blue/50
+                   transition-colors cursor-pointer"
+        >
+          <option value="all">All</option>
+          <option value="online">Online</option>
+          <option value="offline">Offline</option>
+        </select>
+      </div>
+    </div>
+  );
+};
+
+
+// ==================== src\app\(game)\users\page.tsx ====================
+"use client";
+
+import React from 'react';
+import { useUsers } from '@/hooks/useUsers';
+import { Table } from '@/components/ui/Table';
+import { FilterPanel } from './components/FilterPanel';
+import { User } from './types';
+import Link from 'next/link';
+import Image from 'next/image';
+import { cn } from '@/lib/utils';
+import { Column, SortDirection } from '@/components/ui/Table/types';
+
+export default function UsersPage() {
+  const {
+    users,
+    loading,
+    error,
+    filters,
+    setFilters,
+    sortConfig,
+    setSortConfig
+  } = useUsers();
+
+  const columns: Column<User>[] = [
+    {
+      key: 'avatarUrl',
+      header: '',
+      sortable: false,
+      render(value, row) {
+        const avatarUrl = value as string | undefined;
+        return (
+          <div className="w-10 h-10 rounded-full overflow-hidden bg-bright-blue/10 border border-bright-blue/20">
+            {avatarUrl ? (
+              <Image
+                src={avatarUrl}
+                alt={`${row.displayName}'s avatar`}
+                width={40}
+                height={40}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-bright-blue/50">
+                {row.displayName.charAt(0).toUpperCase()}
+              </div>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      key: 'displayName',
+      header: 'Username',
+      sortable: true,
+      render(value, row) {
+        const displayName = value as string;
+        return (
+          <Link
+            href={row.profileUrl}
+            className="text-bright-blue hover:text-bright-blue/80 transition-colors"
+          >
+            {displayName}
+          </Link>
+        );
+      }
+    },
+    {
+      key: 'isOnline',
+      header: 'Status',
+      sortable: true,
+      render(value, row) {
+        const isOnline = value as boolean;
+        return (
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                "w-3 h-3 rounded-full",
+                isOnline
+                  ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"
+                  : "bg-gray-400"
+              )}
+            />
+            <span className="text-text">
+              {isOnline ? "Online" : `Last seen ${formatLastActive(row.lastActive)}`}
+            </span>
+          </div>
+        );
+      }
+    }
+  ];
+
+  const formatLastActive = (timestamp: number): string => {
+    const now = Date.now();
+    const diff = now - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (minutes < 60) {
+      return `${minutes} minutes ago`;
+    } else if (hours < 24) {
+      const remainingMinutes = minutes % 60;
+      return `${hours} hours ${remainingMinutes} minutes ago`;
+    } else if (days < 2) {
+      const remainingHours = hours % 24;
+      return `1 day ${remainingHours} hours ago`;
+    } else {
+      return `${days} days ago`;
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="p-4 text-red-500">
+        Error loading users: {error.message}
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-goldman text-bright-blue mb-2">Users</h1>
+        <p className="text-text/80">
+          View and manage users in your network
+        </p>
+      </div>
+
+      <FilterPanel
+        filters={filters}
+        onFiltersChange={setFilters}
+      />
+
+      {loading ? (
+        <div className="flex items-center justify-center p-12">
+          <div className="w-6 h-6 border-2 border-bright-blue border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
+        <Table<User>
+          data={users}
+          columns={columns}
+          sortConfig={sortConfig}
+          onSort={(key: keyof User, direction: SortDirection) => setSortConfig({ key, direction })}
+          className="bg-dark-bg/50 border border-bright-blue/20 rounded-lg overflow-hidden"
+        />
+      )}
+    </div>
+  );
+}
+
+
+// ==================== src\app\(game)\users\types.ts ====================
+export interface User {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string;
+  isOnline: boolean;
+  lastActive: number;
+  profileUrl: string;
+}
+
+export interface UserFilters {
+  search: string;
+  status: 'all' | 'online' | 'offline';
+}
+
+export interface SortConfig {
+  key: keyof User;
+  direction: 'asc' | 'desc';
+}
+
+export interface UseUsersResult {
+  users: User[];
+  loading: boolean;
+  error: Error | null;
+  filters: UserFilters;
+  setFilters: (filters: UserFilters) => void;
+  sortConfig: SortConfig;
+  setSortConfig: (config: SortConfig) => void;
+}
+
+export interface FilterPanelProps {
+  filters: UserFilters;
+  onFiltersChange: (filters: UserFilters) => void;
+}
+
+
+// ==================== src\app\(landing)\layout.tsx ====================
+export default function LandingLayout({
+    children,
+  }: {
+    children: React.ReactNode
+  }) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white">
+        {/* We'll add header/navigation here later */}
+        <main>
+          {children}
+        </main>
+        {/* We'll add footer here later */}
+      </div>
+    )
+  }
+
+// ==================== src\app\(landing)\page.tsx ====================
+import Header from '@/components/landing/Header';
+import Hero from '@/components/landing/Hero';
+import Carousel from '@/components/landing/Carousel';
+import InfoGrid from '@/components/landing/InfoGrid';
+import Footer from '@/components/shared/Footer';
+
+export default function LandingPage() {
+  return (
+    <div className="min-h-screen bg-[#01000A]">
+      <Header />
+      <Hero />
+      <div 
+        className="relative"
+        style={{
+          backgroundImage: `url('/assets/images/landing/bg_darktextured.svg')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      >
+        {/* Dark gradient overlay for smooth transition */}
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'linear-gradient(to bottom, #01000A 0%, rgba(1, 0, 10, 0.8) 15%, rgba(1, 0, 10, 0.1) 40%, rgba(1, 0, 10, 0.1) 100%)',
+          }}
+        />
+        
+        <div className="relative max-w-[1400px] mx-auto">
+          <Carousel />
+          <InfoGrid />
+        </div>
+      </div>
+      <Footer />
+    </div>
+  );
+}
+
+// ==================== src\app\globals.css ====================
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --dark-bg: 1 0 10;        /* #01000A in RGB */
+  --bright-blue: 0 229 255; /* #00e5ff in RGB */
+  --neon-pink: 225 0 255;   /* #e100ff in RGB */
+  --text: 228 228 228;      /* #e4e4e4 in RGB */
+  --header-height: 60px;
+  --nav-width: 60px;
+  --panel-width: 20%;
+  --bottom-height: 200px;
+  --bg-opacity: 0.6;
+}
+
+@layer base {
+  html {
+    @apply bg-[#01000A];
+  }
+  
+  body {
+    @apply min-h-screen text-text font-syne;
+    background-color: #01000A;  /* Fallback */
+    background-image: linear-gradient(to bottom, rgba(1, 0, 10, 0.95), rgba(1, 0, 10, 0.9));
+  }
+
+  .nav-link {
+    @apply font-syne text-text/90 no-underline text-base font-medium 
+           tracking-wider transition-colors duration-300
+           hover:text-bright-blue;
+  }
+}
+
+@layer components {
+  .play-button {
+    @apply font-goldman px-8 py-3 bg-transparent 
+           border border-bright-blue text-bright-blue
+           uppercase tracking-wider relative
+           transition-all duration-300
+           hover:shadow-[0_0_15px_rgba(0,229,255,0.3)]
+           after:absolute after:inset-0
+           after:bg-bright-blue/5 after:opacity-0
+           hover:after:opacity-100 after:transition-opacity;
+  }
+
+  .carousel-wrapper {
+    @apply bg-black/30 backdrop-blur-sm
+           border border-bright-blue/10
+           shadow-[0_0_30px_rgba(0,229,255,0.05)]
+           p-8;
+  }
+
+  .neon-text {
+    @apply text-bright-blue drop-shadow-[0_0_10px_rgba(0,229,255,0.3)];
+  }
+
+  .glass-panel {
+    @apply bg-black/80 backdrop-blur-md
+           border border-bright-blue/10
+           shadow-[0_0_30px_rgba(0,229,255,0.05)];
+  }
+
+  .game-bg {
+    background-color: rgb(var(--dark-bg) / var(--bg-opacity));
+  }
+}
+
+
+// ==================== src\app\layout.tsx ====================
+import type { Metadata } from "next";
+import { Syne, Goldman } from "next/font/google";
+import "./globals.css";
+import { Providers } from '@/app/providers';
+
+// Load fonts
+const syne = Syne({ 
+  subsets: ["latin"],
+  variable: "--font-syne",
+  display: "swap",
+});
+
+const goldman = Goldman({ 
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  variable: "--font-goldman",
+  display: "swap",
+});
+
+export const metadata: Metadata = {
+  title: "Shinobi Rift",
+  description: "A text-based ninja MMORPG set in a fractured reality",
+  icons: {
+    icon: "/favicon.ico",
+  },
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" className={`${syne.variable} ${goldman.variable}`}>
+      <body className="min-h-screen bg-dark-bg text-text">
+        <Providers>
+          {children}
+        </Providers>
+      </body>
+    </html>
+  );
+}
+
+
+// ==================== src\app\metadata.ts ====================
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Shinobi Rift",
+  description: "A text-based ninja MMORPG set in a fractured reality",
+  icons: {
+    icon: "/favicon.ico",
+  },
+};
+
+
+// ==================== src\app\providers.tsx ====================
+"use client";
+
+import { AuthProvider } from '@/contexts/AuthContext';
+import { ToastProvider } from '@/contexts/ToastContext';
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <ToastProvider>
+      <AuthProvider>
+        {children}
+      </AuthProvider>
+    </ToastProvider>
+  );
+}
+
+
+// ==================== src\components\auth\DebugLoginButton\index.tsx ====================
+'use client';
+
+import { useAuth } from '@/contexts/AuthContext';
+
+export function DebugLoginButton() {
+  const { debugLogin } = useAuth();
+
+  const handleClick = async () => {
+    console.log('Debug login button clicked');
+    try {
+      await debugLogin?.();
+      console.log('Debug login successful');
+    } catch (error) {
+      console.error('Debug login failed:', error);
+    }
+  };
+
+  // Only show in development
+  if (process.env.NODE_ENV !== 'development' || !process.env.NEXT_PUBLIC_ENABLE_DEBUG_AUTH) {
+    return null;
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      className="w-full px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
+    >
+      Debug Login
+    </button>
+  );
+}
+
+
+// ==================== src\components\auth\DiscordLoginButton\index.tsx ====================
+"use client";
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
+import { LoginResult } from '@/contexts/AuthContext/types';
+
+interface DiscordLoginButtonProps {
+  className?: string;
+}
+
+interface AuthResponse {
+  type: 'SUCCESS' | 'ERROR';
+  data: LoginResult | { message: string };
+}
+
+export function DiscordLoginButton({ className = '' }: DiscordLoginButtonProps) {
+  const router = useRouter();
+  const { login } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleLogin = async () => {
+    setError(null);
+    setLoading(true);
+    let popup: Window | null = null;
+
+    try {
+      // Open popup centered
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+
+      popup = window.open(
+        `/api/auth/discord`,
+        'Discord Login',
+        `width=${width},height=${height},top=${top},left=${left},status=yes,toolbar=no,menubar=no,location=no`
+      );
+
+      if (!popup) {
+        throw new Error('Popup was blocked. Please enable popups for this site.');
+      }
+
+      const result = await new Promise<LoginResult>((resolve, reject) => {
+        const handleMessage = (event: MessageEvent<AuthResponse>) => {
+          if (event.origin !== window.location.origin) return;
+          
+          if (event.data.type === 'ERROR') {
+            const errorData = event.data.data as { message: string };
+            reject(new Error(errorData.message || 'Authentication failed'));
+          }
+
+          if (event.data.type === 'SUCCESS') {
+            const loginData = event.data.data as LoginResult;
+            resolve(loginData);
+          }
+        };
+
+        window.addEventListener('message', handleMessage);
+
+        // Check if popup was closed
+        const checkClosed = setInterval(() => {
+          if (popup?.closed) {
+            clearInterval(checkClosed);
+            window.removeEventListener('message', handleMessage);
+            reject(new Error('Authentication window was closed'));
+          }
+        }, 1000);
+
+        // Cleanup function for promise
+        const cleanup = () => {
+          window.removeEventListener('message', handleMessage);
+          clearInterval(checkClosed);
+          if (popup && !popup.closed) popup.close();
+        };
+
+        // Timeout after 5 minutes
+        setTimeout(() => {
+          cleanup();
+          reject(new Error('Authentication timed out'));
+        }, 5 * 60 * 1000);
+
+        // Also cleanup if window is closed
+        window.addEventListener('unload', cleanup);
+      });
+
+      console.log('Login successful:', result);
+      await login(result);
+      router.push('/game');
+
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(err instanceof Error ? err.message : 'Authentication failed');
+      if (popup && !popup.closed) popup.close();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {error && (
+        <div className="p-2 text-sm text-red-500 bg-red-100/10 rounded">
+          {error}
+        </div>
+      )}
+      
+      <button
+        onClick={handleLogin}
+        disabled={loading}
+        className={`
+          flex items-center justify-center gap-2 
+          w-full px-4 py-2 
+          bg-[#5865F2] hover:bg-[#4752C4] 
+          text-white rounded-md
+          transition-colors
+          disabled:opacity-50 disabled:cursor-not-allowed
+          ${className}
+        `}
+      >
+        <DiscordIcon className="w-5 h-5" />
+        <span>{loading ? 'Connecting...' : 'Continue with Discord'}</span>
+      </button>
+    </div>
+  );
+}
+
+const DiscordIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515a.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.839 19.839 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.182 0-2.157-1.085-2.157-2.419c0-1.333.956-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.946 2.418-2.157 2.418z"/>
+  </svg>
+);
+
+
+// ==================== src\components\game\layout\BottomPanel\index.tsx ====================
+"use client";
+
+import { useGameLayout } from '@/contexts/GameLayoutContext';
+import { cn } from '@/lib/utils';
+import { MessageSquare, Package, Map, Settings } from 'lucide-react';
+
+export default function BottomPanel() {
+  const { activePanel, setActivePanel, isPanelOpen, setIsPanelOpen } = useGameLayout();
+
+  const handlePanelClick = (panel: 'chat' | 'inventory' | 'map' | 'settings') => {
+    if (activePanel === panel && isPanelOpen) {
+      setIsPanelOpen(false);
+    } else {
+      setActivePanel(panel);
+      setIsPanelOpen(true);
+    }
+  };
+
+  const NavButton = ({ 
+    panel, 
+    icon: Icon 
+  }: { 
+    panel: 'chat' | 'inventory' | 'map' | 'settings';
+    icon: typeof MessageSquare;
+  }) => (
+    <button
+      onClick={() => handlePanelClick(panel)}
+      className={cn(
+        "flex-1 h-14 flex items-center justify-center",
+        "text-text/50 hover:text-neon-pink transition-colors",
+        activePanel === panel && isPanelOpen && "text-neon-pink"
+      )}
+    >
+      <Icon className="w-6 h-6" />
+    </button>
+  );
+
+  return (
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-14 bg-dark-bg/95 border-t border-neon-pink/10 flex">
+      <NavButton panel="chat" icon={MessageSquare} />
+      <NavButton panel="inventory" icon={Package} />
+      <NavButton panel="map" icon={Map} />
+      <NavButton panel="settings" icon={Settings} />
+    </nav>
+  );
+}
+
+
+// ==================== src\components\game\layout\Header\index.tsx ====================
+"use client";
+
+import { useAuth } from '@/hooks/useAuth';
+import { useGameLayout } from '@/contexts/GameLayoutContext';
+import Link from 'next/link';
+import { Menu, X, MessageSquare, Heart, Map, Settings, Users } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const NAV_ITEMS = [
+  { href: '/users', label: 'Users', icon: Users },
+  { href: '#', label: 'Shop' },
+  { href: '#', label: 'Travel' },
+  { href: '#', label: 'Clan' },
+  { href: '#', label: 'Lore' },
+  { href: '#', label: 'Blog' },
+];
+
+const PANEL_ITEMS = [
+  { id: 'chat', icon: MessageSquare, label: 'Chat' },
+  { id: 'inventory', icon: Heart, label: 'Inventory' },
+  { id: 'map', icon: Map, label: 'Map' },
+  { id: 'settings', icon: Settings, label: 'Settings' },
+] as const;
+
+export default function Header() {
+  const { logout } = useAuth();
+  const { 
+    isMobileMenuOpen, 
+    setIsMobileMenuOpen,
+    activePanel,
+    setActivePanel,
+    isPanelOpen,
+    setIsPanelOpen
+  } = useGameLayout();
+
+  const handlePanelToggle = (panelId: typeof PANEL_ITEMS[number]['id']) => {
+    if (activePanel === panelId && isPanelOpen) {
+      setIsPanelOpen(false);
+    } else {
+      setActivePanel(panelId);
+      setIsPanelOpen(true);
+    }
+  };
+
+  return (
+    <header className="fixed top-0 left-0 w-[calc(100%-15px)] h-[60px] z-[1002]
+                     bg-gradient-to-b from-dark-bg/65 via-dark-bg/50 to-dark-bg/30
+                     border-b border-bright-blue/10 backdrop-blur-md">
+      <div className="flex items-center justify-between h-full px-4">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="lg:hidden"
+          >
+            {isMobileMenuOpen ? (
+              <X className="w-6 h-6 text-bright-blue" />
+            ) : (
+              <Menu className="w-6 h-6 text-bright-blue" />
+            )}
+          </button>
+
+          <span className="font-goldman text-bright-blue text-xl hidden md:block">
+            SHINOBI RIFT
+          </span>
+
+          {/* Desktop Navigation */}
+          <nav className="hidden lg:flex items-center gap-8">
+            {NAV_ITEMS.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className="nav-link flex items-center gap-2"
+              >
+                {item.icon && <item.icon className="w-4 h-4" />}
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+
+          {/* Mobile Panel Icons */}
+          <div className="flex items-center gap-2 lg:hidden">
+            {PANEL_ITEMS.map(({ id, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => handlePanelToggle(id)}
+                className={cn(
+                  "w-10 h-10 flex items-center justify-center",
+                  "border border-bright-blue/20 rounded-lg",
+                  "bg-bright-blue/5 text-bright-blue",
+                  "transition-all duration-300",
+                  activePanel === id && isPanelOpen && "bg-bright-blue/20 border-bright-blue"
+                )}
+              >
+                <Icon className="w-5 h-5" />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Desktop Logout Button */}
+        <button
+          onClick={() => logout()}
+          className="px-4 py-2 text-bright-blue border border-bright-blue/20 
+                   hover:bg-bright-blue/10 transition-all duration-300 rounded
+                   hidden lg:block"
+        >
+          Logout
+        </button>
+      </div>
+
+      {/* Mobile Menu */}
+      {isMobileMenuOpen && (
+        <div className="fixed top-[60px] left-0 w-full h-[calc(100vh-60px)] 
+                      bg-dark-bg/95 backdrop-blur-md z-[1001] lg:hidden">
+          <nav className="flex flex-col p-4">
+            {NAV_ITEMS.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className="py-3 px-4 text-text hover:text-bright-blue 
+                         transition-colors border-b border-bright-blue/10
+                         flex items-center gap-2"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                {item.icon && <item.icon className="w-4 h-4" />}
+                {item.label}
+              </Link>
+            ))}
+            <button
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                logout();
+              }}
+              className="py-3 px-4 text-bright-blue hover:bg-bright-blue/10 
+                       transition-colors mt-4 text-left"
+            >
+              Logout
+            </button>
+          </nav>
+        </div>
+      )}
+    </header>
+  );
+}
+
+
+// ==================== src\components\game\layout\MainContent\index.tsx ====================
+"use client";
+
+import { useGameLayout } from '@/contexts/GameLayoutContext';
+import { useResizablePanel } from '@/hooks/useResizablePanel';
+import { cn } from '@/lib/utils';
+
+export default function MainContent({ children }: { children: React.ReactNode }) {
+  const { isPanelOpen, panelWidth } = useGameLayout();
+  const { isResizing } = useResizablePanel();
+
+  return (
+    <div 
+      className="fixed top-[60px] bottom-0 overflow-y-auto lg:left-[60px] left-0 right-0"
+      style={{
+        right: '0',
+        left: window.innerWidth >= 1024 ? `${isPanelOpen ? panelWidth + 60 : 60}px` : '0'
+      }}
+    >
+      <main className="min-h-full w-full">
+        <div className="min-h-screen bg-dark-bg/60 backdrop-blur-md text-text p-4">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+
+// ==================== src\components\game\layout\ResizableSidePanel\index.tsx ====================
+"use client";
+
+import { useGameLayout } from '@/contexts/GameLayoutContext';
+import { useResizablePanel } from '@/hooks/useResizablePanel';
+import { cn } from '@/lib/utils';
+import SideNav from './SideNav';
+import PanelContent from './PanelContent';
+
+export default function ResizableSidePanel() {
+  const { isPanelOpen, setIsPanelOpen, activePanel } = useGameLayout();
+  const { width, isResizing, handleMouseDown } = useResizablePanel();
+
+  return (
+    <>
+      {/* Desktop Side Navigation */}
+      <div className="hidden lg:block">
+        <SideNav />
+      </div>
+
+      {/* Panel Content */}
+      <aside
+        className={cn(
+          "fixed z-[1001]",
+          // Mobile styles
+          "lg:hidden inset-0 bg-dark-bg/95 backdrop-blur-md",
+          !isPanelOpen && "-translate-y-full",
+          isPanelOpen && "translate-y-0",
+          
+          // Desktop styles
+          "lg:translate-y-0 lg:top-[60px] lg:left-[60px]",
+          "lg:h-[calc(100vh-60px)] lg:bg-neon-pink/5",
+          "lg:border-r lg:border-neon-pink/10",
+          "lg:block",
+          !isPanelOpen && "lg:hidden"
+        )}
+        style={{ 
+          width: window.innerWidth >= 1024 ? (isPanelOpen ? width : 0) : '100%'
+        }}
+      >
+        <div 
+          className="h-full overflow-hidden"
+          style={{ 
+            width: window.innerWidth >= 1024 ? width : '100%'
+          }}
+        >
+          <PanelContent onClose={() => setIsPanelOpen(false)} />
+        </div>
+        
+        {/* Resize handle - desktop only */}
+        <div
+          onMouseDown={handleMouseDown}
+          className={cn(
+            "absolute top-0 right-0 w-1 h-full cursor-col-resize",
+            "hover:bg-bright-blue/20",
+            isResizing && "bg-bright-blue/20",
+            "hidden lg:block"
+          )}
+        />
+      </aside>
+
+      {/* Mobile overlay backdrop */}
+      {isPanelOpen && window.innerWidth < 1024 && (
+        <div 
+          className="lg:hidden fixed inset-0 bg-dark-bg/50 backdrop-blur-sm z-[1000]"
+          onClick={() => setIsPanelOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+
+// ==================== src\components\game\layout\ResizableSidePanel\PanelContent.tsx ====================
+"use client";
+
+import { useGameLayout } from '../../../../contexts/GameLayoutContext';
+import { X } from 'lucide-react';
+import { cn } from '../../../../lib/utils';
+
+interface PanelContentProps {
+  onClose?: () => void;
+}
+
+export default function PanelContent({ onClose }: PanelContentProps) {
+  const { activePanel } = useGameLayout();
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex items-center justify-between p-4 border-b border-neon-pink/10 lg:hidden">
+        <h2 className="font-goldman text-neon-pink">
+          {activePanel.charAt(0).toUpperCase() + activePanel.slice(1)}
+        </h2>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center text-neon-pink"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {activePanel === 'chat' && (
+          <div className="h-full flex flex-col p-4">
+            <h2 className="font-goldman text-neon-pink mb-4 hidden lg:block">Global Chat</h2>
+            <div className="flex-1 overflow-y-auto mb-4 space-y-4">
+              {/* Sample chat messages */}
+              <ChatMessage
+                sender="ShadowBlade"
+                message="Anyone up for Crystal Wastes raid?"
+                time="2:45 PM"
+              />
+              <ChatMessage
+                sender="NinjaMaster"
+                message="Count me in!"
+                time="2:46 PM"
+              />
+              <ChatMessage
+                sender="System"
+                message="New event starting in 5 minutes!"
+                time="2:50 PM"
+                isSystem
+              />
+            </div>
+            <div className="flex gap-2 p-2 bg-neon-pink/10 rounded border border-neon-pink/20">
+              <input
+                type="text"
+                placeholder="Type your message..."
+                className="flex-1 bg-transparent border-none outline-none text-text"
+              />
+              <button className="px-4 py-2 bg-neon-pink/20 text-text rounded
+                             hover:bg-neon-pink/30 transition-colors">
+                Send
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activePanel === 'inventory' && (
+          <div className="p-4">
+            <h2 className="font-goldman text-neon-pink mb-4 hidden lg:block">Inventory</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {/* Sample inventory items */}
+              {SAMPLE_ITEMS.map((item, index) => (
+                <InventoryItem key={index} {...item} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activePanel === 'map' && (
+          <div className="p-4">
+            <h2 className="font-goldman text-neon-pink mb-4 hidden lg:block">Map</h2>
+            <div className="aspect-square bg-neon-pink/10 rounded border border-neon-pink/20">
+              {/* Map content will go here */}
+              <div className="h-full flex items-center justify-center text-text/50">
+                Map Coming Soon
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activePanel === 'settings' && (
+          <div className="p-4">
+            <h2 className="font-goldman text-neon-pink mb-4 hidden lg:block">Settings</h2>
+            <div className="space-y-4">
+              {/* Sample settings */}
+              <SettingsOption label="Notifications" />
+              <SettingsOption label="Sound Effects" />
+              <SettingsOption label="Music" />
+              <SettingsOption label="Chat Filter" />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Helper Components
+interface ChatMessageProps {
+  sender: string;
+  message: string;
+  time: string;
+  isSystem?: boolean;
+}
+
+function ChatMessage({ sender, message, time, isSystem }: ChatMessageProps) {
+  return (
+    <div className="p-3 bg-neon-pink/10 rounded border border-neon-pink/20">
+      <div className="flex justify-between mb-1 text-sm">
+        <span className={cn(
+          "font-medium",
+          isSystem ? "text-yellow-400" : "text-neon-pink"
+        )}>
+          {sender}
+        </span>
+        <span className="text-text/50">{time}</span>
+      </div>
+      <p className="text-text">{message}</p>
+    </div>
+  );
+}
+
+interface InventoryItemProps {
+  icon: string;
+  name: string;
+  count: number;
+}
+
+function InventoryItem({ icon, name, count }: InventoryItemProps) {
+  return (
+    <div className="aspect-square bg-neon-pink/10 rounded border border-neon-pink/20
+                    p-2 flex flex-col items-center justify-center gap-2
+                    hover:bg-neon-pink/20 transition-colors cursor-pointer">
+      <div className="text-2xl">{icon}</div>
+      <div className="text-sm text-center text-text">{name}</div>
+      <div className="text-xs text-text/50">x{count}</div>
+    </div>
+  );
+}
+
+function SettingsOption({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-between p-3 
+                    bg-neon-pink/10 rounded border border-neon-pink/20">
+      <span className="text-text">{label}</span>
+      <button className="w-12 h-6 bg-neon-pink/20 rounded-full
+                        flex items-center px-1 cursor-pointer
+                        hover:bg-neon-pink/30 transition-colors">
+        <div className="w-4 h-4 bg-text rounded-full" />
+      </button>
+    </div>
+  );
+}
+
+// Sample Data
+const SAMPLE_ITEMS = [
+  { icon: '⚔️', name: 'Katana', count: 1 },
+  { icon: '🗡️', name: 'Kunai', count: 5 },
+  { icon: '💫', name: 'Smoke Bomb', count: 3 },
+  { icon: '🌟', name: 'Chakra Crystal', count: 10 },
+  { icon: '📜', name: 'Scroll', count: 2 },
+  { icon: '🔮', name: 'Spirit Orb', count: 7 },
+];
+
+
+// ==================== src\components\game\layout\ResizableSidePanel\SideNav.tsx ====================
+"use client";
+
+import { useGameLayout } from '../../../../contexts/GameLayoutContext';
+import { MessageSquare, Heart, Map, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
+import { cn } from '../../../../lib/utils';
+
+const NAV_ITEMS = [
+  { id: 'chat', icon: MessageSquare, label: 'Chat' },
+  { id: 'inventory', icon: Heart, label: 'Inventory' },
+  { id: 'map', icon: Map, label: 'Map' },
+  { id: 'settings', icon: Settings, label: 'Settings' },
+] as const;
+
+export default function SideNav() {
+  const { isPanelOpen, setIsPanelOpen, activePanel, setActivePanel } = useGameLayout();
+
+  const handlePanelToggle = (id: typeof NAV_ITEMS[number]['id']) => {
+    if (activePanel === id && isPanelOpen) {
+      setIsPanelOpen(false);
+    } else {
+      setActivePanel(id);
+      setIsPanelOpen(true);
+    }
+  };
+
+  return (
+    <nav className="fixed top-[60px] left-0 w-[60px] h-[calc(100vh-60px)] 
+                   bg-dark-bg/60 border-r border-bright-blue/10 backdrop-blur-md">
+      <div className="flex-1 flex flex-col gap-4 p-4">
+        {NAV_ITEMS.map(({ id, icon: Icon, label }) => (
+          <button
+            key={id}
+            onClick={() => handlePanelToggle(id)}
+            className={cn(
+              "w-10 h-10 flex items-center justify-center group relative",
+              "border border-bright-blue/20 rounded-lg",
+              "bg-bright-blue/5 text-bright-blue",
+              "transition-all duration-300",
+              "hover:bg-bright-blue/20 hover:border-bright-blue",
+              "hover:shadow-[0_0_15px_rgba(0,229,255,0.2)]",
+              "hover:translate-x-1",
+              activePanel === id && isPanelOpen && "bg-bright-blue/20 border-bright-blue"
+            )}
+          >
+            <Icon className="w-5 h-5" />
+            {label && (
+              <div className="absolute left-full ml-2 px-2 py-1 bg-dark-bg/90 rounded
+                            text-xs whitespace-nowrap opacity-0 group-hover:opacity-100
+                            pointer-events-none transition-opacity">
+                {label}
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <button
+        onClick={() => setIsPanelOpen(!isPanelOpen)}
+        className={cn(
+          "w-10 h-10 mx-auto mb-4 flex items-center justify-center",
+          "border border-bright-blue/20 rounded-lg",
+          "bg-bright-blue/5 text-bright-blue",
+          "transition-all duration-300",
+          "hover:bg-bright-blue/20 hover:border-bright-blue",
+          "absolute bottom-0 left-1/2 -translate-x-1/2"
+        )}
+      >
+        {isPanelOpen ? (
+          <ChevronLeft className="w-5 h-5" />
+        ) : (
+          <ChevronRight className="w-5 h-5" />
+        )}
+      </button>
+    </nav>
+  );
+}
+
+
+// ==================== src\components\game\shared\ChatBox\ChatMessage.tsx ====================
+import React from 'react';
+import type { FormattedSegment } from '@/utils/messageFormatter';
+import { MessageFormatter } from '@/utils/messageFormatter';
+import type { ChatMessage as ChatMessageType } from '@/types/chat';
+
+interface ChatMessageProps {
+    message: ChatMessageType;
+    className?: string;
+}
+
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, className }) => {
+    const segments = MessageFormatter.formatMessage(message.content);
+
+    const renderSegment = (segment: FormattedSegment, index: number) => {
+        switch (segment.type) {
+            case 'text':
+                return <span key={index}>{segment.content}</span>;
+            case 'bold':
+                return <strong key={index}>{segment.content}</strong>;
+            case 'italic':
+                return <em key={index}>{segment.content}</em>;
+            case 'underline':
+                return <u key={index}>{segment.content}</u>;
+            case 'link':
+                return (
+                    <a
+                        key={index}
+                        href={segment.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:text-blue-600 underline"
+                    >
+                        {segment.content}
+                    </a>
+                );
+            case 'image':
+                return (
+                    <div key={index} className="max-w-full my-1">
+                        <img
+                            src={segment.url}
+                            alt={segment.alt || 'Chat image'}
+                            className="max-w-full h-auto rounded"
+                            loading="lazy"
+                        />
+                    </div>
+                );
+            case 'video':
+                return (
+                    <div key={index} className="max-w-full my-1 aspect-video">
+                        <iframe
+                            src={segment.url}
+                            title="YouTube video"
+                            className="w-full h-full rounded"
+                            allowFullScreen
+                            loading="lazy"
+                        />
+                    </div>
+                );
+            default:
+                return null;
+        }
+    };
+
+    return (
+        <div className={`px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 ${className}`}>
+            <div className="flex items-start space-x-2">
+                {/* Avatar placeholder - we'll implement this later */}
+                <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0" />
+                
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline space-x-2">
+                        <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                            {message.userId}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {new Date(message.createdAt).toLocaleTimeString()}
+                        </span>
+                    </div>
+                    
+                    <div className="mt-1 text-sm text-gray-800 dark:text-gray-200 break-words">
+                        {segments.map((segment, index) => renderSegment(segment, index))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default ChatMessage;
+
+
+// ==================== src\components\landing\Carousel\index.tsx ====================
+"use client";
+
+import { useState, useEffect, useCallback } from 'react';
+import { cn } from '@/lib/utils';
+
+type CarouselImage = {
+  src: string;
+  alt: string;
+  caption: string;
+};
+
+const IMAGES: CarouselImage[] = [
+  {
+    src: '/assets/images/landing/forest1.png',
+    alt: 'Game Screenshot 1',
+    caption: 'Master ancient ninja techniques in a world torn by dimensional rifts',
+  },
+  {
+    src: '/assets/images/landing/city1.png',
+    alt: 'Game Screenshot 2',
+    caption: 'Explore vast landscapes filled with mystery and danger',
+  },
+  {
+    src: '/assets/images/landing/fluxzone2.png',
+    alt: 'Game Screenshot 3',
+    caption: 'Engage in tactical combat with other players',
+  },
+];
+
+export default function Carousel() {
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  const nextSlide = useCallback(() => {
+    setCurrentSlide((prev) => (prev + 1) % IMAGES.length);
+  }, []);
+
+  // Auto-advance slides
+  useEffect(() => {
+    const timer = setInterval(nextSlide, 5000);
+    return () => clearInterval(timer);
+  }, [nextSlide]);
+
+  return (
+    <section className="w-full py-16">
+      <div className="max-w-[1400px] mx-auto px-8">
+        <div className="relative bg-bright-blue/5 backdrop-blur-sm border border-bright-blue/10 
+                      shadow-[0_0_30px_rgba(0,229,255,0.05)] p-8
+                      before:absolute before:inset-0 
+                      before:from-[#01000A]/20 before:to-transparent before:-z-10">
+          <div className="relative h-[70vh] md:h-[600px] overflow-hidden">
+            {/* Slides */}
+            <div
+              className="flex transition-transform duration-500 ease-in-out h-full"
+              style={{ transform: `translateX(-${currentSlide * 100}%)` }}
+            >
+              {IMAGES.map((image, index) => (
+                <CarouselSlide key={index} {...image} />
+              ))}
+            </div>
+
+            {/* Navigation Dots */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 z-10">
+              {IMAGES.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setCurrentSlide(index)}
+                  className={cn(
+                    "w-12 h-[3px] transition-all duration-300",
+                    currentSlide === index
+                      ? "bg-bright-blue shadow-[0_0_10px_rgba(0,229,255,0.5)]"
+                      : "bg-bright-blue/30"
+                  )}
+                  aria-label={`Go to slide ${index + 1}`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CarouselSlide({ src, alt, caption }: CarouselImage) {
+  return (
+    <div className="min-w-full h-full flex flex-col items-center gap-6">
+      <div className="relative w-full h-[85%] border border-bright-blue/10">
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <p className="neon-text text-lg text-center font-medium">
+        {caption}
+      </p>
+    </div>
+  );
+}
+
+// ==================== src\components\landing\Header\index.tsx ====================
+"use client";
+
+import { useState, useEffect } from "react";
+import BurgerButton from "@/components/ui/BurgerButton";
+import MobileMenu, { MenuItem, MenuDivider } from "@/components/ui/MobileMenu";
+import { cn } from "@/lib/utils";
+import { FaDiscord, FaGoogle, FaFacebookF } from 'react-icons/fa';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
+import { LoginResult } from '@/contexts/AuthContext/types';
+
+type AuthProvider = 'discord' | 'google' | 'facebook';
+
+interface AuthButtonProps {
+  provider: AuthProvider;
+}
+
+export default function Header() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    handleScroll();
+
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  return (
+    <header
+      className={cn(
+        "fixed top-0 left-0 w-[calc(100%-15px)] z-[1002]",
+        "transition-all duration-300",
+        "border-b border-bright-blue/10",
+        "bg-gradient-to-b from-dark-bg/65 via-dark-bg/50 to-dark-bg/30",
+        "backdrop-blur-md",
+        isScrolled
+          ? "h-[60px] py-2 bg-dark-bg/85"
+          : "h-[100px] py-6",
+      )}>
+      <div className="max-w-[1400px] mx-auto px-8 flex justify-between items-center h-full">
+        {/* Mobile Menu Button */}
+        <BurgerButton
+          isOpen={isMenuOpen}
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          className="md:hidden"
+        />
+
+        {/* Desktop Navigation */}
+        <nav className="hidden md:flex gap-8 items-center">
+          <NavigationLinks />
+        </nav>
+
+        {/* Play Now Button & Dropdown */}
+        <div className="relative">
+          <PlayNowButton
+            isOpen={isDropdownOpen}
+            onMouseEnter={() => setIsDropdownOpen(true)}
+            onMouseLeave={() => setIsDropdownOpen(false)}
+          />
+          <AuthDropdown
+            isOpen={isDropdownOpen}
+            onMouseEnter={() => setIsDropdownOpen(true)}
+            onMouseLeave={() => setIsDropdownOpen(false)}
+          />
+        </div>
+      </div>
+
+      {/* Mobile Menu */}
+      <MobileMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)}>
+        <div className="flex flex-col">
+          {/* Navigation Links */}
+          <div className="flex flex-col">
+            <NavigationLinks mobile />
+          </div>
+          
+          {/* Divider */}
+          <MenuDivider />
+          
+          {/* Auth Buttons */}
+          <div className="p-4 space-y-2">
+            <AuthButtons />
+          </div>
+        </div>
+      </MobileMenu>
+    </header>
+  );
+}
+
+function NavigationLinks({ mobile = false }: { mobile?: boolean }) {
+  const links = ['Home', 'Blog', 'Lore', 'Rules'];
+
+  if (mobile) {
+    return (
+      <>
+        {links.map(link => (
+          <MenuItem key={link} href="#">{link}</MenuItem>
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {links.map(link => (
+        <a key={link} href="#" className="nav-link">{link}</a>
+      ))}
+    </>
+  );
+}
+
+function PlayNowButton({ isOpen, ...props }: { isOpen: boolean } & React.HTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button 
+      {...props}
+      className={cn(
+        "font-goldman px-8 py-3",
+        "bg-transparent border border-bright-blue text-bright-blue",
+        "uppercase tracking-wider relative",
+        "transition-all duration-300",
+        "hover:shadow-[0_0_15px_rgba(0,229,255,0.3)]",
+        "after:absolute after:inset-0",
+        "after:bg-bright-blue/5 after:opacity-0",
+        "hover:after:opacity-100 after:transition-opacity"
+      )}
+    >
+      PLAY NOW ▾
+    </button>
+  );
+}
+
+function AuthButton({ provider }: AuthButtonProps) {
+  const router = useRouter();
+  const { login } = useAuth();
+  const [loading, setLoading] = useState(false);
+
+  const handleAuth = async () => {
+    if (provider !== 'discord') {
+      alert('Coming soon!');
+      return;
+    }
+
+    setLoading(true);
+    let popup: Window | null = null;
+
+    try {
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+
+      popup = window.open(
+        `/api/auth/discord`,
+        'Discord Login',
+        `width=${width},height=${height},top=${top},left=${left},status=yes,toolbar=no,menubar=no,location=no`
+      );
+
+      if (!popup) {
+        throw new Error('Popup was blocked. Please enable popups for this site.');
+      }
+
+      const result = await new Promise<LoginResult>((resolve, reject) => {
+        const handleMessage = (event: MessageEvent) => {
+          if (event.origin !== window.location.origin) return;
+          
+          if (event.data.type === 'ERROR') {
+            reject(new Error(event.data.data?.message || 'Authentication failed'));
+          }
+
+          if (event.data.type === 'SUCCESS') {
+            resolve(event.data.data);
+          }
+        };
+
+        window.addEventListener('message', handleMessage);
+
+        const checkClosed = setInterval(() => {
+          if (popup?.closed) {
+            clearInterval(checkClosed);
+            window.removeEventListener('message', handleMessage);
+            reject(new Error('Authentication window was closed'));
+          }
+        }, 1000);
+
+        setTimeout(() => {
+          clearInterval(checkClosed);
+          window.removeEventListener('message', handleMessage);
+          if (popup && !popup.closed) popup.close();
+          reject(new Error('Authentication timed out'));
+        }, 5 * 60 * 1000);
+      });
+
+      console.log('Login successful:', result);
+      await login(result);
+      router.push('/game');
+
+    } catch (err) {
+      console.error('Login error:', err);
+      alert(err instanceof Error ? err.message : 'Authentication failed');
+      if (popup && !popup.closed) popup.close();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const icons = {
+    discord: <FaDiscord className="w-5 h-5" />,
+    google: <FaGoogle className="w-5 h-5" />,
+    facebook: <FaFacebookF className="w-5 h-5" />
+  };
+
+  const colors = {
+    discord: 'hover:border-[#7289DA] hover:bg-[rgba(114,137,218,0.1)]',
+    google: 'hover:border-[#DB4437] hover:bg-[rgba(219,68,55,0.1)]',
+    facebook: 'hover:border-[#4267B2] hover:bg-[rgba(66,103,178,0.1)]'
+  };
+
+  return (
+    <button
+      onClick={handleAuth}
+      disabled={loading}
+      className={cn(
+        "flex items-center gap-4 w-full p-4 my-1",
+        "bg-bright-blue/5 border border-bright-blue/20",
+        "text-text cursor-pointer transition-all duration-200",
+        "hover:translate-x-1",
+        "disabled:opacity-50 disabled:cursor-not-allowed",
+        colors[provider]
+      )}
+    >
+      {icons[provider]}
+      <span>
+        {loading ? 'Connecting...' : `Sign in with ${provider.charAt(0).toUpperCase() + provider.slice(1)}`}
+      </span>
+    </button>
+  );
+}
+
+function AuthButtons() {
+  const providers = ['discord', 'google', 'facebook'] as const;
+  
+  return (
+    <div className="flex flex-col gap-1">
+      {providers.map((provider) => (
+        <AuthButton key={provider} provider={provider} />
+      ))}
+    </div>
+  );
+}
+
+function AuthDropdown({ isOpen, ...props }: { isOpen: boolean } & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div 
+      {...props}
+      className={cn(
+        "absolute top-[calc(100%+5px)] right-0",
+        "bg-dark-bg/95 backdrop-blur-md",
+        "min-w-[250px] p-2",
+        "opacity-0 invisible transition-all duration-300",
+        "border border-bright-blue/10",
+        "shadow-[0_0_20px_rgba(0,229,255,0.1)]",
+        isOpen && "opacity-100 visible"
+      )}
+    >
+      <AuthButtons />
+    </div>
+  );
+}
+
+
+// ==================== src\components\landing\Hero\index.tsx ====================
+export default function Hero() {
+  return (
+    <section className="relative h-screen flex flex-col justify-center items-center text-center">
+      {/* Background Image with Overlay */}
+      <div 
+        className="absolute inset-0 z-10"
+        style={{
+          background: `linear-gradient(to bottom, rgba(1, 0, 10, 0.7), rgba(1, 0, 10, 0.5)), url('/assets/images/landing/bg14.png')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      />
+
+      {/* Bottom Gradient Fade */}
+      <div 
+        className="absolute bottom-0 left-0 right-0 h-[300px] z-20"
+        style={{
+          background: 'linear-gradient(to top, #01000A, transparent)',
+        }}
+      />
+
+      {/* Content */}
+      <div className="relative z-30 px-4 max-w-[1400px] mx-auto w-full">
+        <h1 className="font-goldman text-5xl md:text-7xl mb-4 text-bright-blue 
+                     tracking-wider drop-shadow-[0_0_20px_rgba(0,229,255,0.5)]">
+          SHINOBI RIFT
+        </h1>
+        
+        <p className="text-lg md:text-xl max-w-[700px] mx-auto mb-10 tracking-wide leading-relaxed font-normal">
+          Enter a world where ancient ninja arts clash with dimensional chaos. 
+          Master your skills, forge alliances, and shape the destiny of a fractured reality.
+        </p>
+
+        <a 
+          href="#" 
+          className="inline-block relative overflow-hidden
+                   font-syne font-semibold px-12 py-5 text-lg
+                   text-bright-blue bg-bright-blue/10 border-2 border-bright-blue
+                   cursor-pointer transition-all duration-300 tracking-wider uppercase
+                   hover:bg-bright-blue hover:text-[#01000A]
+                   hover:shadow-[0_0_30px_rgba(0,229,255,0.4)]"
+        >
+          Begin Your Journey
+        </a>
+      </div>
+    </section>
+  );
+}
+
+
+// ==================== src\components\landing\InfoGrid\index.tsx ====================
+import LoreSection from './LoreSection';
+import NewsSection from './NewsSection';
+
+export default function InfoGrid() {
+  return (
+    <div className="w-full max-w-[1400px] mx-auto px-8 grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-8 mb-16">
+      <LoreSection />
+      <NewsSection />
+    </div>
+  );
+}
+
+
+// ==================== src\components\landing\InfoGrid\LoreSection.tsx ====================
+import { ArrowRight } from 'lucide-react';
+
+export default function LoreSection() {
+    return (
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-bright-blue/5 p-10 
+                        border border-bright-blue/10 shadow-[0_0_30px_rgba(0,229,255,0.05)]">
+        <div className="flex flex-col justify-center">
+          <h2 className="font-goldman text-4xl text-bright-blue mb-6 tracking-wide">
+            A World Transformed
+          </h2>
+          <div className="space-y-4 text-lg leading-relaxed">
+            <p>
+              In the wake of the Great Unraveling, reality itself has been torn asunder. 
+              Ancient ninja clans, once guardians of dimensional stability, now navigate 
+              a world where the laws of physics bend and time itself flows like water.
+            </p>
+            <p>
+              Choose your path, forge alliances, and decide the fate of this fractured reality. 
+              Will you seek to restore the old order, or embrace the chaos to forge something 
+              entirely new?
+            </p>
+          </div>
+          <a href="#" className="group inline-flex items-center text-bright-blue mt-6 
+                              transition-all duration-300 hover:text-shadow-[0_0_10px_rgba(0,229,255,0.5)]">
+            <span className="relative">
+              Discover The Full Story
+              <span className="absolute bottom-0 left-0 w-0 h-[1px] bg-bright-blue 
+                           transition-all duration-300 group-hover:w-full"/>
+            </span>
+            <ArrowRight className="ml-2 w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
+          </a>
+        </div>
+        <div className="h-full border border-bright-blue/20">
+          <img 
+            src="/assets/images/landing/rift1.png"
+            alt="Dimensional Rift"
+            className="w-full h-full object-cover"
+          />
+        </div>
+      </section>
+    );
+  }
+
+// ==================== src\components\landing\InfoGrid\NewsSection.tsx ====================
+type NewsItem = {
+    date: string;
+    title: string;
+    description: string;
+  };
+  
+  const NEWS_ITEMS: NewsItem[] = [
+    {
+      date: "November 9, 2024",
+      title: "New Dimension Discovered",
+      description: "Explore the Crystal Wastes in our latest content update!"
+    },
+    {
+      date: "November 7, 2024",
+      title: "Balance Changes",
+      description: "Adjustments to combat mechanics and skill progression."
+    },
+    {
+      date: "November 5, 2024",
+      title: "Community Event",
+      description: "Join the Shadow Tournament this weekend!"
+    }
+  ];
+  
+  export default function NewsSection() {
+    return (
+      <aside className="bg-neon-pink/5 p-10 border border-neon-pink/10 flex flex-col justify-center">
+        <h2 className="font-goldman text-3xl text-neon-pink mb-8 tracking-wide">
+          Latest Updates
+        </h2>
+        <div className="space-y-8">
+          {NEWS_ITEMS.map((item, index) => (
+            <NewsItem 
+              key={index}
+              date={item.date}
+              title={item.title}
+              description={item.description}
+            />
+          ))}
+        </div>
+      </aside>
+    );
+  }
+  
+  function NewsItem({ date, title, description }: NewsItem) {
+    return (
+      <article className="pb-8 border-b border-neon-pink/20 last:border-0 last:pb-0">
+        <time className="block text-sm text-neon-pink mb-2 font-medium">
+          {date}
+        </time>
+        <h3 className="text-xl mb-2 font-semibold">
+          {title}
+        </h3>
+        <p className="text-text/80">
+          {description}
+        </p>
+      </article>
+    );
+  }
+
+// ==================== src\components\shared\Footer\FooterLink.tsx ====================
+interface FooterLinkProps {
+    href: string;
+    children: React.ReactNode;
+  }
+  
+  export default function FooterLink({ href, children }: FooterLinkProps) {
+    return (
+      <a
+        href={href}
+        className="text-text/70 no-underline text-sm transition-colors duration-300 
+                   hover:text-bright-blue"
+      >
+        {children}
+      </a>
+    );
+  }
+
+// ==================== src\components\shared\Footer\FooterSection.tsx ====================
+interface FooterSectionProps {
+    title: string;
+    children: React.ReactNode;
+  }
+  
+  export default function FooterSection({ title, children }: FooterSectionProps) {
+    return (
+      <div className="footer-section">
+        <h3 className="font-goldman text-bright-blue mb-4 text-lg">
+          {title}
+        </h3>
+        {children}
+      </div>
+    );
+  }
+
+// ==================== src\components\shared\Footer\index.tsx ====================
+import { MessageSquareMore } from 'lucide-react';
+import FooterLink from './FooterLink';
+
+const FOOTER_LINKS = [
+  // Row 1 - Support and additional links
+  [
+    { href: '#', text: 'Help Center' },
+    { href: '#', text: 'Contact Us' },
+    { href: '#', text: 'Community Guidelines' },
+    { href: '#', text: 'Game Rules' },
+    { href: '#', text: 'Bug Reports' },
+    { href: '#discord', icon: MessageSquareMore, ariaLabel: 'Join our Discord server' },
+  ],
+  // Row 2 - Legal essentials
+  [
+    { href: '#', text: 'Terms of Service' },
+    { href: '#', text: 'Privacy Policy' },
+    { href: '#', text: 'Cookie Policy' },
+    { href: '#', text: 'GDPR Rights' },
+    { href: '#', text: 'Impressum' },
+  ]
+] as const;
+
+type FooterLink = 
+  | { href: string; text: string }
+  | { href: string; icon: typeof MessageSquareMore; ariaLabel: string };
+
+export default function Footer() {
+  return (
+    <footer className="bg-dark-bg/95 border-t border-bright-blue/10 py-2 relative z-[100]">
+      <div className="max-w-[1400px] mx-auto px-4">
+        <div className="flex flex-col">
+          {FOOTER_LINKS.map((row, rowIndex) => (
+            <div key={rowIndex}>
+              <div className="flex items-center justify-center flex-wrap gap-x-1 text-xs">
+                {row.map((link: FooterLink, linkIndex) => (
+                  <div key={'text' in link ? link.text : `icon-${linkIndex}`} className="flex items-center">
+                    <a 
+                      href={link.href}
+                      className={
+                        'icon' in link
+                          ? "text-bright-blue hover:text-bright-blue/80 transition-colors p-1 hover:bg-bright-blue/10 rounded"
+                          : "text-text/70 hover:text-text transition-colors px-3 py-1"
+                      }
+                      target={link.href.startsWith('http') ? '_blank' : undefined}
+                      rel={link.href.startsWith('http') ? 'noopener noreferrer' : undefined}
+                    >
+                      {'icon' in link ? (
+                        <link.icon 
+                          className="w-4 h-4" 
+                          aria-label={link.ariaLabel}
+                        />
+                      ) : (
+                        <span>{link.text}</span>
+                      )}
+                    </a>
+                    {linkIndex < row.length - 1 && 'text' in link && (
+                      <div className="h-3 w-[1px] bg-gradient-to-b from-transparent via-bright-blue/20 to-transparent" />
+                    )}
+                  </div>
+                ))}
+              </div>
+              {rowIndex === 0 && (
+                <div className="my-2 h-[1px] mx-auto w-[80%] bg-gradient-to-r 
+                  from-transparent via-bright-blue/20 to-transparent
+                  relative">
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2
+                    border border-bright-blue/20 rotate-45" />
+                </div>
+              )}
+            </div>
+          ))}
+          
+          {/* Copyright Notice */}
+          <div className="text-center mt-1 pt-2">
+            <p className="text-text/40 text-[10px]">
+              © {new Date().getFullYear()} Wasabi Solutions
+            </p>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+
+// ==================== src\components\ui\BurgerButton\index.tsx ====================
+"use client";
+
+import { cn } from "@/lib/utils";
+
+interface BurgerButtonProps {
+  isOpen: boolean;
+  onClick: () => void;
+  className?: string;
+}
+
+export default function BurgerButton({ isOpen, onClick, className }: BurgerButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex flex-col justify-between w-[30px] h-[20px] bg-transparent border-none cursor-pointer p-0 z-[1003]",
+        className
+      )}
+      aria-label={isOpen ? "Close menu" : "Open menu"}
+      aria-expanded={isOpen}
+    >
+      <span 
+        className={cn(
+          "w-full h-[2px] bg-[#00e5ff] shadow-[0_0_5px_rgba(0,229,255,0.5)] transition-all duration-300",
+          isOpen && "translate-y-[9px] rotate-45"
+        )}
+      />
+      <span 
+        className={cn(
+          "w-full h-[2px] bg-[#00e5ff] shadow-[0_0_5px_rgba(0,229,255,0.5)] transition-all duration-300",
+          isOpen && "opacity-0"
+        )}
+      />
+      <span 
+        className={cn(
+          "w-full h-[2px] bg-[#00e5ff] shadow-[0_0_5px_rgba(0,229,255,0.5)] transition-all duration-300",
+          isOpen && "-translate-y-[9px] -rotate-45"
+        )}
+      />
+    </button>
+  );
+}
+
+// ==================== src\components\ui\ErrorBoundary\index.tsx ====================
+"use client";
+
+import React from 'react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
+
+interface Props {
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+}
+
+interface State {
+  hasError: boolean;
+  error?: Error;
+}
+
+export class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return {
+      hasError: true,
+      error,
+    };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Log error to your preferred error tracking service
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-dark-bg">
+          <div className="max-w-md p-6 text-center">
+            <AlertCircle className="w-12 h-12 text-bright-blue mx-auto mb-4" />
+            <h2 className="text-2xl font-goldman text-bright-blue mb-4">
+              Something went wrong
+            </h2>
+            <p className="text-text/80 mb-6">
+              {this.state.error?.message || 'An unexpected error occurred'}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="flex items-center justify-center gap-2 mx-auto
+                       px-4 py-2 bg-bright-blue/10 text-bright-blue
+                       border border-bright-blue/20 rounded
+                       hover:bg-bright-blue/20 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Try again</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// ==================== src\components\ui\ErrorMessages\index.tsx ====================
+import { AlertCircle, Wifi, Lock, Server } from 'lucide-react';
+
+interface ErrorMessageProps {
+  title: string;
+  message: string;
+  icon?: React.ReactNode;
+  action?: React.ReactNode;
+}
+
+export function ErrorMessage({ title, message, icon, action }: ErrorMessageProps) {
+  return (
+    <div className="p-4 bg-bright-blue/5 border border-bright-blue/10 rounded-lg">
+      <div className="flex items-start gap-3">
+        <div className="text-bright-blue">
+          {icon || <AlertCircle className="w-5 h-5" />}
+        </div>
+        <div>
+          <h3 className="font-goldman text-bright-blue mb-1">{title}</h3>
+          <p className="text-text/80 text-sm">{message}</p>
+          {action && <div className="mt-3">{action}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function NetworkError({ retry }: { retry?: () => void }) {
+  return (
+    <ErrorMessage
+      icon={<Wifi className="w-5 h-5" />}
+      title="Connection Error"
+      message="Please check your internet connection and try again."
+      action={
+        retry && (
+          <button
+            onClick={retry}
+            className="text-sm text-bright-blue hover:text-bright-blue/80"
+          >
+            Retry
+          </button>
+        )
+      }
+    />
+  );
+}
+
+export function AuthError() {
+  return (
+    <ErrorMessage
+      icon={<Lock className="w-5 h-5" />}
+      title="Authentication Error"
+      message="Your session has expired. Please log in again."
+      action={
+        <button
+          onClick={() => window.location.href = '/login'}
+          className="text-sm text-bright-blue hover:text-bright-blue/80"
+        >
+          Go to Login
+        </button>
+      }
+    />
+  );
+}
+
+export function ServerError() {
+  return (
+    <ErrorMessage
+      icon={<Server className="w-5 h-5" />}
+      title="Server Error"
+      message="We're experiencing technical difficulties. Please try again later."
+    />
+  );
+}
+
+// ==================== src\components\ui\LoadingOverlay\index.tsx ====================
+"use client";
+
+import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
+
+interface LoadingOverlayProps {
+  isLoading: boolean;
+  message?: string;
+  fullScreen?: boolean;
+  className?: string;
+}
+
+export function LoadingOverlay({ 
+  isLoading, 
+  message = 'Loading...', 
+  fullScreen = false,
+  className 
+}: LoadingOverlayProps) {
+  const [showDelayed, setShowDelayed] = useState(false);
+
+  // Only show loading overlay if loading takes more than 500ms
+  useEffect(() => {
+    if (isLoading) {
+      const timer = setTimeout(() => setShowDelayed(true), 500);
+      return () => clearTimeout(timer);
+    }
+    setShowDelayed(false);
+  }, [isLoading]);
+
+  if (!isLoading || !showDelayed) return null;
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center",
+        "bg-dark-bg/80 backdrop-blur-sm",
+        fullScreen ? "fixed inset-0 z-50" : "absolute inset-0",
+        className
+      )}
+    >
+      <div className="relative">
+        {/* Outer ring */}
+        <div className="absolute inset-0 rounded-full border-2 border-bright-blue/20" />
+        
+        {/* Spinning inner ring */}
+        <div className="w-12 h-12 rounded-full border-2 border-bright-blue 
+                      border-t-transparent animate-spin" />
+      </div>
+      
+      {message && (
+        <p className="mt-4 text-bright-blue font-medium animate-pulse">
+          {message}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ==================== src\components\ui\LoadingSpinner\index.tsx ====================
+"use client";
+
+export default function LoadingSpinner() {
+  return (
+    <div className="flex items-center justify-center">
+      <div className="relative w-12 h-12">
+        {/* Outer ring */}
+        <div className="absolute inset-0 border-4 border-neon-pink/20 rounded-full"></div>
+        {/* Spinning ring */}
+        <div className="absolute inset-0 border-4 border-transparent border-t-neon-pink rounded-full animate-spin"></div>
+      </div>
+    </div>
+  );
+}
+
+
+// ==================== src\components\ui\MobileMenu\index.tsx ====================
+"use client";
+
+import { cn } from "@/lib/utils";
+
+interface MobileMenuProps {
+  isOpen: boolean;
+  onClose: () => void;
+  className?: string;
+  children: React.ReactNode;
+}
+
+export default function MobileMenu({ isOpen, onClose, className, children }: MobileMenuProps) {
+  return (
+    <>
+      <nav
+        className={cn(
+          "fixed top-[60px] left-0 w-[250px] h-[calc(100vh-60px)]",
+          "bg-[rgba(1,0,3,0.95)] border-r border-[rgba(0,229,255,0.1)]",
+          "backdrop-blur-[10px] transition-transform duration-300 p-4 z-[1001]",
+          isOpen ? "translate-x-0" : "-translate-x-full",
+          className
+        )}
+      >
+        {children}
+      </nav>
+
+      {/* Overlay */}
+      <div
+        onClick={onClose}
+        className={cn(
+          "fixed inset-0 bg-[rgba(1,0,3,0.7)] backdrop-blur-[3px]",
+          "transition-all duration-300 z-[1000]",
+          isOpen ? "opacity-100 visible" : "opacity-0 invisible"
+        )}
+      />
+    </>
+  );
+}
+
+// Menu item component for consistent styling
+export function MenuItem({ 
+  href, 
+  children, 
+  className 
+}: { 
+  href: string; 
+  children: React.ReactNode; 
+  className?: string;
+}) {
+  return (
+    <a
+      href={href}
+      className={cn(
+        "block p-4 text-[#e4e4e4] no-underline",
+        "border-b border-[rgba(0,229,255,0.1)]",
+        "transition-all duration-300 hover:bg-[rgba(0,229,255,0.1)] hover:text-[#00e5ff]",
+        className
+      )}
+    >
+      {children}
+    </a>
+  );
+}
+
+export function MenuDivider({ className }: { className?: string }) {
+  return (
+    <div 
+      className={cn(
+        "h-[1px] bg-[rgba(0,229,255,0.1)] my-2",
+        className
+      )} 
+    />
+  );
+}
+
+// ==================== src\components\ui\Table\index.tsx ====================
+import React, { useState } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { TableProps, Column, SortDirection } from './types';
+
+export function Table<T>({
+  data,
+  columns,
+  onSort,
+  sortConfig,
+  className
+}: TableProps<T>) {
+  const [localSortConfig, setLocalSortConfig] = useState<{
+    key: keyof T;
+    direction: SortDirection;
+  } | null>(null);
+
+  const handleSort = (column: Column<T>) => {
+    if (!column.sortable) return;
+
+    const key = column.key;
+    const isAsc = (sortConfig?.key === key && sortConfig?.direction === 'asc') ||
+                 (localSortConfig?.key === key && localSortConfig?.direction === 'asc');
+    const direction: SortDirection = isAsc ? 'desc' : 'asc';
+
+    if (onSort) {
+      onSort(key, direction);
+    } else {
+      setLocalSortConfig({ key, direction });
+    }
+  };
+
+  const getSortedData = () => {
+    if (!localSortConfig) return data;
+
+    return [...data].sort((a, b) => {
+      const aValue = a[localSortConfig.key];
+      const bValue = b[localSortConfig.key];
+
+      if (aValue === bValue) return 0;
+      
+      const modifier = localSortConfig.direction === 'asc' ? 1 : -1;
+      return aValue > bValue ? modifier : -modifier;
+    });
+  };
+
+  const displayData = onSort ? data : getSortedData();
+  const currentSortConfig = onSort ? sortConfig : localSortConfig;
+
+  return (
+    <div className={cn("w-full overflow-x-auto", className)}>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="bg-dark-bg/50 border-b border-bright-blue/20">
+            {columns.map((column) => (
+              <th
+                key={String(column.key)}
+                onClick={() => column.sortable && handleSort(column)}
+                className={cn(
+                  "px-4 py-3 text-left text-bright-blue font-goldman",
+                  "text-sm whitespace-nowrap",
+                  column.sortable && "cursor-pointer hover:bg-bright-blue/10"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {column.header}
+                  {column.sortable && (
+                    <div className="flex flex-col">
+                      <ChevronUp
+                        className={cn(
+                          "w-3 h-3 -mb-1",
+                          currentSortConfig?.key === column.key &&
+                          currentSortConfig?.direction === 'asc'
+                            ? "text-bright-blue"
+                            : "text-bright-blue/30"
+                        )}
+                      />
+                      <ChevronDown
+                        className={cn(
+                          "w-3 h-3",
+                          currentSortConfig?.key === column.key &&
+                          currentSortConfig?.direction === 'desc'
+                            ? "text-bright-blue"
+                            : "text-bright-blue/30"
+                        )}
+                      />
+                    </div>
+                  )}
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {displayData.map((row, index) => (
+            <tr
+              key={index}
+              className="border-b border-bright-blue/10 hover:bg-bright-blue/5"
+            >
+              {columns.map((column) => {
+                const value = row[column.key];
+                return (
+                  <td
+                    key={String(column.key)}
+                    className="px-4 py-3 text-sm text-text"
+                  >
+                    {column.render
+                      ? column.render(value, row)
+                      : String(value)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+// ==================== src\components\ui\Table\types.ts ====================
+import { ReactNode } from 'react';
+
+export interface Column<T, K extends keyof T = keyof T> {
+  key: K;
+  header: string;
+  sortable?: boolean;
+  render?: (value: T[K], row: T) => ReactNode;
+}
+
+export interface TableProps<T> {
+  data: T[];
+  columns: Column<T>[];
+  onSort?: (key: keyof T, direction: 'asc' | 'desc') => void;
+  sortConfig?: {
+    key: keyof T;
+    direction: 'asc' | 'desc';
+  };
+  className?: string;
+}
+
+export type SortDirection = 'asc' | 'desc';
+
+
+// ==================== src\components\ui\Toast\index.tsx ====================
+"use client";
+
+import { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
+
+interface ToastProps {
+  message: string;
+  type?: ToastType;
+  duration?: number;
+  onClose?: () => void;
+}
+
+export function Toast({ 
+  message, 
+  type = 'info', 
+  duration = 5000, 
+  onClose 
+}: ToastProps) {
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    if (duration) {
+      const timer = setTimeout(() => {
+        setIsVisible(false);
+        onClose?.();
+      }, duration);
+      return () => clearTimeout(timer);
+    }
+  }, [duration, onClose]);
+
+  const colors = {
+    success: 'border-green-500 bg-green-500/10 text-green-500',
+    error: 'border-red-500 bg-red-500/10 text-red-500',
+    info: 'border-bright-blue bg-bright-blue/10 text-bright-blue',
+    warning: 'border-yellow-500 bg-yellow-500/10 text-yellow-500',
+  };
+
+  return (
+    <div
+      className={cn(
+        'fixed bottom-4 right-4 z-50',
+        'max-w-md p-4 rounded-lg border',
+        'transform transition-all duration-300',
+        colors[type],
+        isVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <p className="flex-1">{message}</p>
+        <button
+          onClick={() => {
+            setIsVisible(false);
+            onClose?.();
+          }}
+          className="text-current opacity-70 hover:opacity-100 transition-opacity"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ==================== src\contexts\AuthContext\index.tsx ====================
+'use client';
+
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { PlayFabClient } from 'playfab-sdk';
+import { useRouter } from 'next/navigation';
+import { AuthContextType, AuthUser, LoginResult } from './types';
+import { useToast } from '../ToastContext';
+
+const DEBUG = process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ENABLE_DEBUG_AUTH === 'true';
+const DEBUG_CUSTOM_ID = process.env.NEXT_PUBLIC_DEBUG_USER_CUSTOM_ID;
+const SESSION_CHECK_INTERVAL = 60 * 60 * 1000; // 15 minutes
+
+if (!PlayFabClient.IsClientLoggedIn() && process.env.NEXT_PUBLIC_PLAYFAB_TITLE_ID) {
+  PlayFabClient.settings.titleId = process.env.NEXT_PUBLIC_PLAYFAB_TITLE_ID;
+  if (DEBUG) {
+    console.log(
+      '[Auth Context] PlayFab initialized with title ID:',
+      process.env.NEXT_PUBLIC_PLAYFAB_TITLE_ID
+    );
+  }
+}
+
+export const AuthContext = createContext<AuthContextType | null>(null);
+
+export function AuthProvider({ children }: { children: React.ReactNode }): JSX.Element {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const { showToast } = useToast();
+  const router = useRouter();
+
+  const clearSession = useCallback(() => {
+    if (DEBUG) {
+      console.log('[Auth Context] Clearing session...');
+    }
+    localStorage.removeItem('playfab_session');
+    localStorage.removeItem('discord_id');
+    document.cookie = 'playfab_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    setUser(null);
+    setError(null);
+    
+    // Only redirect to landing if not already there
+    const currentPath = window.location.pathname;
+    if (currentPath !== '/' && currentPath !== '/login') {
+      if (DEBUG) {
+        console.log('[Auth Context] Redirecting to landing page...');
+      }
+      router.replace('/');
+    }
+  }, [router]);
+
+  const debugLogin = useCallback(async () => {
+    if (!DEBUG) {
+      throw new Error('Debug login is only available in development mode');
+    }
+
+    if (!DEBUG_CUSTOM_ID) {
+      throw new Error('Debug user custom ID not configured in environment variables');
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await new Promise((resolve, reject) => {
+        PlayFabClient.LoginWithCustomID({
+          CustomId: DEBUG_CUSTOM_ID,
+          CreateAccount: false,
+          InfoRequestParameters: {
+            GetUserAccountInfo: true,
+            GetUserInventory: false,
+            GetUserVirtualCurrency: false,
+            GetUserData: false,
+            GetPlayerStatistics: false,
+            GetPlayerProfile: true,
+            GetTitleData: false,
+            GetUserReadOnlyData: false,
+            GetCharacterList: false,
+            GetCharacterInventories: false
+          }
+        }, (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        });
+      });
+
+      const loginResult = result as any;
+      
+      if (!loginResult?.data?.SessionTicket) {
+        throw new Error('Debug login failed: No session ticket');
+      }
+
+      const sessionTicket = loginResult.data.SessionTicket;
+      localStorage.setItem('playfab_session', sessionTicket);
+      localStorage.setItem('discord_id', DEBUG_CUSTOM_ID);
+      document.cookie = `playfab_session=${sessionTicket}; Path=/; SameSite=Lax`;
+
+      const userData: AuthUser = {
+        id: loginResult.data.PlayFabId,
+        displayName: loginResult.data.InfoResultPayload?.PlayerProfile?.DisplayName || 'Debug User',
+        playfabId: loginResult.data.PlayFabId
+      };
+
+      setUser(userData);
+      showToast('Successfully logged in with debug account!', 'success');
+      router.replace('/game');
+    } catch (err) {
+      console.error('[Auth Context] Debug login error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Debug login failed';
+      setError(new Error(errorMessage));
+      showToast('Debug login failed', 'error');
+      clearSession();
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast, router, clearSession]);
+
+  const login = useCallback(async (loginResult: LoginResult) => {
+    if (DEBUG) {
+      console.log('[Auth Context] Processing login result:', loginResult);
+    }
+    setLoading(true);
+    setError(null);
+
+    try {
+      const sessionTicket = loginResult.data.SessionTicket;
+      
+      localStorage.setItem('playfab_session', sessionTicket);
+      if (loginResult.discordId) {
+        if (DEBUG) {
+          console.log('[Auth Context] Storing Discord ID:', loginResult.discordId);
+        }
+        localStorage.setItem('discord_id', loginResult.discordId);
+      } else {
+        console.warn('[Auth Context] No Discord ID in login result');
+      }
+      
+      document.cookie = `playfab_session=${sessionTicket}; Path=/; SameSite=Lax`;
+      if (DEBUG) {
+        console.log('[Auth Context] Session stored');
+      }
+      
+      const userData: AuthUser = {
+        id: loginResult.data.PlayFabId,
+        displayName: loginResult.data.InfoResultPayload?.PlayerProfile?.DisplayName || 'Player',
+        playfabId: loginResult.data.PlayFabId
+      };
+
+      if (DEBUG) {
+        console.log('[Auth Context] Setting user:', userData);
+      }
+      setUser(userData);
+      showToast('Successfully logged in!', 'success');
+      
+      if (DEBUG) {
+        console.log('[Auth Context] Navigating to game page...');
+      }
+      router.replace('/game');
+    } catch (err) {
+      console.error('[Auth Context] Login error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Login failed';
+      setError(new Error(errorMessage));
+      showToast('Login failed', 'error');
+      clearSession();
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast, router, clearSession]);
+
+  const logout = useCallback(async () => {
+    if (DEBUG) {
+      console.log('[Auth Context] Logging out...');
+    }
+    clearSession();
+    showToast('Successfully logged out', 'success');
+  }, [clearSession, showToast]);
+
+  const restoreSession = useCallback(async (): Promise<boolean> => {
+    try {
+      const discordId = localStorage.getItem('discord_id');
+      if (!discordId) {
+        if (DEBUG) {
+          console.log('[Auth Context] No Discord ID found for session restoration');
+        }
+        return false;
+      }
+
+      if (DEBUG) {
+        console.log('[Auth Context] Attempting to restore session with Discord ID:', discordId);
+      }
+
+      const result = await new Promise((resolve, reject) => {
+        PlayFabClient.LoginWithCustomID({
+          CustomId: discordId,
+          CreateAccount: false,
+          InfoRequestParameters: {
+            GetUserAccountInfo: true,
+            GetUserInventory: false,
+            GetUserVirtualCurrency: false,
+            GetUserData: false,
+            GetPlayerStatistics: false,
+            GetPlayerProfile: true,
+            GetTitleData: false,
+            GetUserReadOnlyData: false,
+            GetCharacterList: false,
+            GetCharacterInventories: false
+          }
+        }, (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        });
+      });
+
+      if (DEBUG) {
+        console.log('[Auth Context] Session restoration result:', result);
+      }
+
+      const sessionTicket = (result as any)?.data?.SessionTicket;
+      if (sessionTicket) {
+        localStorage.setItem('playfab_session', sessionTicket);
+        document.cookie = `playfab_session=${sessionTicket}; Path=/; SameSite=Lax`;
+        if (DEBUG) {
+          console.log('[Auth Context] New session ticket stored');
+        }
+      }
+
+      const profile = (result as any)?.data?.InfoResultPayload?.PlayerProfile;
+      if (profile) {
+        const userData = {
+          id: (result as any).data.PlayFabId,
+          displayName: profile.DisplayName || 'Player',
+          playfabId: (result as any).data.PlayFabId
+        };
+        if (DEBUG) {
+          console.log('[Auth Context] Setting restored user:', userData);
+        }
+        setUser(userData);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('[Auth Context] Session restoration failed:', error);
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    let sessionCheckInterval: NodeJS.Timeout;
+    let isCheckingSession = false;
+    
+    const checkSession = async () => {
+      // Skip if already checking or on login/landing page
+      if (isCheckingSession || window.location.pathname === '/login' || window.location.pathname === '/') {
+        return;
+      }
+
+      isCheckingSession = true;
+
+      try {
+        if (!localStorage.getItem('discord_id')) {
+          if (DEBUG) {
+            console.log('[Auth Context] No Discord ID found, clearing session...');
+          }
+          clearSession();
+          return;
+        }
+
+        if (DEBUG) {
+          console.log('[Auth Context] Checking session...');
+        }
+
+        const restored = await restoreSession();
+        if (!restored) {
+          if (DEBUG) {
+            console.log('[Auth Context] Session restoration failed, clearing...');
+          }
+          clearSession();
+        }
+      } catch (error) {
+        console.error('[Auth Context] Session check failed:', error);
+        clearSession();
+      } finally {
+        isCheckingSession = false;
+        setLoading(false);
+      }
+    };
+
+    // Initial session check
+    checkSession();
+
+    // Set up interval for subsequent checks
+    sessionCheckInterval = setInterval(checkSession, SESSION_CHECK_INTERVAL);
+
+    return () => {
+      if (sessionCheckInterval) {
+        clearInterval(sessionCheckInterval);
+      }
+    };
+  }, [clearSession, restoreSession]);
+
+  const value = useMemo(() => ({
+    user,
+    loading,
+    error,
+    login,
+    logout,
+    ...(DEBUG ? { debugLogin } : {})
+  }), [user, loading, error, login, logout, debugLogin]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthContextType {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
+
+
+// ==================== src\contexts\AuthContext\types.ts ====================
+export interface AuthUser {
+  id: string;
+  displayName: string;
+  playfabId: string;
+}
+
+export interface LoginResult {
+  data: {
+    SessionTicket: string;
+    PlayFabId: string;
+    InfoResultPayload?: {
+      PlayerProfile?: {
+        DisplayName?: string;
+      };
+    };
+  };
+  discordId?: string;
+}
+
+export interface AuthContextType {
+  user: AuthUser | null;
+  loading: boolean;
+  error: Error | null;
+  login: (result: LoginResult) => Promise<void>;
+  logout: () => Promise<void>;
+  debugLogin?: () => Promise<void>;
+}
+
+
+// ==================== src\contexts\AuthContext\__tests__\AuthContext.test.tsx ====================
+import { render, screen, act, waitFor } from '@testing-library/react';
+import { useRouter } from 'next/navigation';
+import { PlayFabClient } from 'playfab-sdk';
+import { AuthProvider, useAuth } from '../index';
+import type { LoginResult } from '../types';
+
+// Mock ToastContext
+jest.mock('../../../contexts/ToastContext', () => ({
+  useToast: () => ({
+    showToast: jest.fn(),
+  }),
+}));
+
+// Test component that uses the auth context
+function TestComponent(): JSX.Element {
+  const { user, login, logout, loading } = useAuth();
+  
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+  
+  return (
+    <div>
+      {user ? (
+        <>
+          <div data-testid="user-display">{user.displayName}</div>
+          <button type="button" onClick={() => logout()}>
+            Logout
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() =>
+            login({
+              code: 200,
+              status: 'OK',
+              data: {
+                SessionTicket: 'test-ticket',
+                PlayFabId: 'test-id',
+                NewlyCreated: false,
+                InfoResultPayload: {
+                  PlayerProfile: {
+                    DisplayName: 'Test User',
+                  },
+                },
+              },
+              discordId: 'test-discord-id'
+            } as LoginResult)
+          }
+        >
+          Login
+        </button>
+      )}
+    </div>
+  );
+}
+
+describe('AuthContext', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    jest.clearAllMocks();
+  });
+
+  it('provides initial loading state', () => {
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    );
+
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+  });
+
+  it('handles successful login', async () => {
+    const mockRouter = useRouter();
+    
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+    });
+
+    const loginButton = screen.getByText('Login');
+    await act(async () => {
+      loginButton.click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-display')).toHaveTextContent('Test User');
+      expect(localStorage.setItem).toHaveBeenCalledWith('playfab_session', 'test-ticket');
+      expect(localStorage.setItem).toHaveBeenCalledWith('discord_id', 'test-discord-id');
+      expect(mockRouter.push).toHaveBeenCalledWith('/game');
+    });
+  });
+
+  it('handles logout', async () => {
+    const mockRouter = useRouter();
+    
+    localStorage.setItem('playfab_session', 'test-ticket');
+    localStorage.setItem('discord_id', 'test-discord-id');
+    
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+    });
+
+    const logoutButton = screen.getByText('Logout');
+    await act(async () => {
+      logoutButton.click();
+    });
+
+    await waitFor(() => {
+      expect(localStorage.removeItem).toHaveBeenCalledWith('playfab_session');
+      expect(localStorage.removeItem).toHaveBeenCalledWith('discord_id');
+      expect(mockRouter.push).toHaveBeenCalledWith('/');
+    });
+  });
+
+  it('handles session check on mount', async () => {
+    (PlayFabClient.GetPlayerProfile as jest.Mock).mockImplementation(
+      (_: unknown, callback: (error: Error | null, result: unknown) => void) => {
+        callback(null, {
+          data: {
+            PlayerProfile: {
+              PlayerId: 'test-id',
+              DisplayName: 'Test User',
+            },
+          },
+        });
+      }
+    );
+
+    localStorage.setItem('playfab_session', 'test-ticket');
+    localStorage.setItem('discord_id', 'test-discord-id');
+
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-display')).toHaveTextContent('Test User');
+    });
+  });
+
+  it('handles failed session check', async () => {
+    (PlayFabClient.GetPlayerProfile as jest.Mock).mockImplementation(
+      (_: unknown, callback: (error: Error | null, result: unknown) => void) => {
+        callback(new Error('Session invalid'), null);
+      }
+    );
+
+    localStorage.setItem('playfab_session', 'invalid-ticket');
+    localStorage.setItem('discord_id', 'test-discord-id');
+
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(localStorage.removeItem).toHaveBeenCalledWith('playfab_session');
+      expect(localStorage.removeItem).toHaveBeenCalledWith('discord_id');
+      expect(screen.queryByTestId('user-display')).not.toBeInTheDocument();
+    });
+  });
+});
+
+
+// ==================== src\contexts\GameLayoutContext\index.tsx ====================
+"use client";
+
+import { createContext, useContext, useState } from 'react';
+import type { GameLayoutContextType, ActivePanel } from './types';
+
+const GameLayoutContext = createContext<GameLayoutContextType | null>(null);
+
+const DEFAULT_PANEL_WIDTH = 300;
+
+export function GameLayoutProvider({ children }: { children: React.ReactNode }) {
+  const [isPanelOpen, setIsPanelOpen] = useState(true);
+  const [activePanel, setActivePanel] = useState<ActivePanel>('chat');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+
+  return (
+    <GameLayoutContext.Provider
+      value={{
+        isPanelOpen,
+        setIsPanelOpen,
+        activePanel,
+        setActivePanel,
+        isMobileMenuOpen,
+        setIsMobileMenuOpen,
+        panelWidth,
+        setPanelWidth,
+      }}
+    >
+      {children}
+    </GameLayoutContext.Provider>
+  );
+}
+
+export function useGameLayout() {
+  const context = useContext(GameLayoutContext);
+  if (!context) {
+    throw new Error('useGameLayout must be used within a GameLayoutProvider');
+  }
+  return context;
+}
+
+
+// ==================== src\contexts\GameLayoutContext\types.ts ====================
+export type ActivePanel = 'chat' | 'inventory' | 'map' | 'settings';
+
+export interface GameLayoutContextType {
+  isPanelOpen: boolean;
+  setIsPanelOpen: (value: boolean) => void;
+  activePanel: ActivePanel;
+  setActivePanel: (panel: ActivePanel) => void;
+  isMobileMenuOpen: boolean;
+  setIsMobileMenuOpen: (value: boolean) => void;
+  panelWidth: number;
+  setPanelWidth: (width: number) => void;
+}
+
+
+// ==================== src\contexts\ToastContext\index.tsx ====================
+"use client";
+
+import React, { createContext, useContext, useState, useCallback } from 'react';
+
+type ToastType = 'success' | 'error' | 'info' | 'warning';
+
+interface Toast {
+  id: number;
+  message: string;
+  type: ToastType;
+}
+
+interface ToastContextType {
+  showToast: (message: string, type: ToastType) => void;
+}
+
+const ToastContext = createContext<ToastContextType | null>(null);
+
+export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const showToast = useCallback((message: string, type: ToastType = 'info') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+
+    // Remove toast after 3 seconds
+    setTimeout(() => {
+      setToasts(prev => prev.filter(toast => toast.id !== id));
+    }, 3000);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ showToast }}>
+      {children}
+      {/* Toast Container */}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className={`px-4 py-2 rounded shadow-lg text-white ${
+              toast.type === 'success' ? 'bg-green-500' :
+              toast.type === 'error' ? 'bg-red-500' :
+              toast.type === 'warning' ? 'bg-yellow-500' :
+              'bg-blue-500'
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+export function useToast() {
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast must be used within a ToastProvider');
+  }
+  return context;
+}
+
+
+// ==================== src\hooks\useAuth.ts ====================
+"use client";
+
+import { useContext } from 'react';
+import { AuthContext } from '@/contexts/AuthContext/index';
+import type { AuthContextType } from '@/contexts/AuthContext/types';
+
+export function useAuth(): AuthContextType {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
+
+
+// ==================== src\hooks\useGameLayout.ts ====================
+
+
+// ==================== src\hooks\useOnlineUsers.ts ====================
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+
+interface OnlineUser {
+    userId: string;
+    displayName: string;
+    lastActive: number;
+}
+
+export const useOnlineUsers = () => {
+    const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<Error | null>(null);
+    const { user } = useAuth();
+
+    useEffect(() => {
+        let intervalId: NodeJS.Timeout;
+
+        const fetchOnlineUsers = async () => {
+            try {
+                const response = await fetch(`${process.env.NEXT_PUBLIC_STRAPI_URL}/api/chat/online-users`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch online users');
+                }
+                const users = await response.json();
+                setOnlineUsers(users);
+                setError(null);
+            } catch (err) {
+                console.error('Error fetching online users:', err);
+                setError(err instanceof Error ? err : new Error('Failed to fetch online users'));
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        // Initial fetch
+        if (user) {
+            fetchOnlineUsers();
+
+            // Update every 30 seconds
+            intervalId = setInterval(fetchOnlineUsers, 30000);
+
+            // Update user's last active status every minute
+            const activityInterval = setInterval(() => {
+                fetch(`${process.env.NEXT_PUBLIC_STRAPI_URL}/api/chat/client-connected`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userId: user.id,
+                        displayName: user.displayName,
+                    }),
+                }).catch(console.error);
+            }, 60000);
+
+            return () => {
+                clearInterval(intervalId);
+                clearInterval(activityInterval);
+            };
+        }
+    }, [user]);
+
+    return {
+        onlineUsers,
+        loading,
+        error
+    };
+};
+
+
+// ==================== src\hooks\useResizablePanel.ts ====================
+"use client";
+
+import { useState, useCallback } from 'react';
+import { useGameLayout } from '@/contexts/GameLayoutContext';
+
+const MIN_WIDTH = 300;
+const MAX_WIDTH = 600;
+
+export function useResizablePanel() {
+  const { panelWidth, setPanelWidth } = useGameLayout();
+  const [isResizing, setIsResizing] = useState(false);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+
+    let rafId: number;
+
+    const startResizing = (e: MouseEvent) => {
+      // Cancel any pending animation frame
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+
+      // Schedule the update on the next animation frame
+      rafId = requestAnimationFrame(() => {
+        const newWidth = Math.max(
+          MIN_WIDTH,
+          Math.min(MAX_WIDTH, e.clientX - 60)
+        );
+        setPanelWidth(newWidth);
+      });
+    };
+
+    const stopResizing = () => {
+      setIsResizing(false);
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener('mousemove', startResizing);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+
+    window.addEventListener('mousemove', startResizing);
+    window.addEventListener('mouseup', stopResizing);
+  }, [setPanelWidth]);
+
+  return {
+    width: panelWidth,
+    isResizing,
+    handleMouseDown,
+  };
+}
+
+
+// ==================== src\hooks\useUsers.ts ====================
+import { useState, useMemo } from 'react';
+import { useOnlineUsers } from './useOnlineUsers';
+import { User, UserFilters, SortConfig, UseUsersResult } from '../app/(game)/users/types';
+
+const DEFAULT_FILTERS: UserFilters = {
+  search: '',
+  status: 'all'
+};
+
+const DEFAULT_SORT: SortConfig = {
+  key: 'displayName',
+  direction: 'asc'
+};
+
+export const useUsers = (): UseUsersResult => {
+  const { onlineUsers, loading, error } = useOnlineUsers();
+  const [filters, setFilters] = useState<UserFilters>(DEFAULT_FILTERS);
+  const [sortConfig, setSortConfig] = useState<SortConfig>(DEFAULT_SORT);
+
+  const formatLastActive = (timestamp: number): string => {
+    const now = Date.now();
+    const diff = now - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (minutes < 60) {
+      return `${minutes} minutes ago`;
+    } else if (hours < 24) {
+      const remainingMinutes = minutes % 60;
+      return `${hours} hours ${remainingMinutes} minutes ago`;
+    } else if (days < 2) {
+      const remainingHours = hours % 24;
+      return `1 day ${remainingHours} hours ago`;
+    } else {
+      return `${days} days ago`;
+    }
+  };
+
+  const users: User[] = useMemo(() => {
+    return onlineUsers.map(user => ({
+      id: user.userId,
+      username: user.displayName,
+      displayName: user.displayName,
+      isOnline: (Date.now() - user.lastActive) < 300000, // 5 minutes threshold
+      lastActive: user.lastActive,
+      profileUrl: `/profile/${user.userId}`,
+      avatarUrl: undefined // Placeholder for now
+    }));
+  }, [onlineUsers]);
+
+  const filteredAndSortedUsers = useMemo(() => {
+    let result = [...users];
+
+    // Apply filters
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      result = result.filter(user => 
+        user.displayName.toLowerCase().includes(searchLower) ||
+        user.username.toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (filters.status !== 'all') {
+      result = result.filter(user => 
+        filters.status === 'online' ? user.isOnline : !user.isOnline
+      );
+    }
+
+    // Apply sorting
+    result.sort((a, b) => {
+      const aValue = a[sortConfig.key];
+      const bValue = b[sortConfig.key];
+
+      // Handle undefined values
+      if (aValue === undefined && bValue === undefined) return 0;
+      if (aValue === undefined) return 1;
+      if (bValue === undefined) return -1;
+
+      // For boolean values (isOnline)
+      if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
+        return sortConfig.direction === 'asc'
+          ? (aValue === bValue ? 0 : aValue ? -1 : 1)
+          : (aValue === bValue ? 0 : aValue ? 1 : -1);
+      }
+
+      // For numbers and strings
+      const modifier = sortConfig.direction === 'asc' ? 1 : -1;
+      return aValue > bValue ? modifier : -modifier;
+    });
+
+    return result;
+  }, [users, filters, sortConfig]);
+
+  return {
+    users: filteredAndSortedUsers,
+    loading,
+    error,
+    filters,
+    setFilters,
+    sortConfig,
+    setSortConfig
+  };
+};
+
+
+// ==================== src\hooks\useWindowSize.ts ====================
+"use client";
+
+import { useState, useEffect } from 'react';
+
+interface WindowSize {
+  width: number;
+  height: number;
+  isMobile: boolean;
+  isTablet: boolean;
+  isDesktop: boolean;
+}
+
+export function useWindowSize(): WindowSize {
+  const [windowSize, setWindowSize] = useState<WindowSize>({
+    width: 0,
+    height: 0,
+    isMobile: false,
+    isTablet: false,
+    isDesktop: false,
+  });
+
+  useEffect(() => {
+    function handleResize() {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      
+      setWindowSize({
+        width,
+        height,
+        isMobile: width < 640,
+        isTablet: width >= 640 && width < 1024,
+        isDesktop: width >= 1024,
+      });
+    }
+
+    // Add event listener
+    window.addEventListener('resize', handleResize);
+    
+    // Call handler right away so state gets updated with initial window size
+    handleResize();
+    
+    // Remove event listener on cleanup
+    return () => window.removeEventListener('resize', handleResize);
+  }, []); // Empty array ensures effect is only run on mount
+
+  return windowSize;
+}
+
+
+// ==================== src\lib\auth\discord.ts ====================
+import { PlayFabClient } from 'playfab-sdk';
+
+const DEBUG = true;
+
+// Initialize PlayFab with title ID
+if (process.env.NEXT_PUBLIC_PLAYFAB_TITLE_ID) {
+  PlayFabClient.settings.titleId = process.env.NEXT_PUBLIC_PLAYFAB_TITLE_ID;
+  if (DEBUG) console.log('[PlayFab Auth] Initialized with title ID:', process.env.NEXT_PUBLIC_PLAYFAB_TITLE_ID);
+}
+
+export interface DiscordUser {
+  id: string;
+  username: string;
+  email: string;
+  global_name?: string;
+}
+
+export async function handleDiscordLogin(accessToken: string): Promise<any> {
+  try {
+    if (DEBUG) console.log('[PlayFab Auth] Starting Discord login...');
+
+    // Verify PlayFab is initialized
+    if (!PlayFabClient.settings.titleId) {
+      throw new Error('PlayFab title ID not configured');
+    }
+
+    // Get Discord user info
+    if (DEBUG) console.log('[PlayFab Auth] Getting Discord user info...');
+    const userResponse = await fetch('https://discord.com/api/users/@me', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    if (!userResponse.ok) {
+      const errorText = await userResponse.text();
+      if (DEBUG) console.error('[PlayFab Auth] Failed to get Discord user info:', errorText);
+      throw new Error('Failed to get Discord user info');
+    }
+
+    const userData: DiscordUser = await userResponse.json();
+    if (DEBUG) console.log('[PlayFab Auth] Discord user data:', userData);
+
+    // Login with PlayFab using Discord ID
+    if (DEBUG) console.log('[PlayFab Auth] Logging in with PlayFab...');
+    return new Promise((resolve, reject) => {
+      PlayFabClient.LoginWithCustomID({
+        CustomId: `discord_${userData.id}`,
+        CreateAccount: true,
+        InfoRequestParameters: {
+          GetUserAccountInfo: true,
+          GetUserInventory: false,
+          GetUserVirtualCurrency: false,
+          GetUserData: false,
+          GetPlayerStatistics: false,
+          GetPlayerProfile: true,
+          GetTitleData: false,
+          GetUserReadOnlyData: false,
+          GetCharacterList: false,
+          GetCharacterInventories: false
+        }
+      }, (error: any, result: any) => {
+        if (error) {
+          console.error('[PlayFab Auth] Login error:', error);
+          reject(error);
+          return;
+        }
+
+        if (DEBUG) console.log('[PlayFab Auth] Login result:', result);
+
+        // Update display name if new account
+        if (result.data.NewlyCreated) {
+          if (DEBUG) console.log('[PlayFab Auth] New account, updating display name...');
+          PlayFabClient.UpdateUserTitleDisplayName({
+            DisplayName: userData.global_name || userData.username
+          }, (updateError) => {
+            if (updateError) {
+              console.warn('[PlayFab Auth] Failed to update display name:', updateError);
+            }
+            if (DEBUG) console.log('[PlayFab Auth] Login complete with new account');
+            resolve({ ...result, discordId: userData.id });
+          });
+        } else {
+          if (DEBUG) console.log('[PlayFab Auth] Login complete with existing account');
+          resolve({ ...result, discordId: userData.id });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[PlayFab Auth] Login error:', error);
+    throw error;
+  }
+}
+
+
+// ==================== src\lib\auth\utils.ts ====================
+export function validateState(returnedState: string | null, storedState: string | null): boolean {
+  if (!returnedState || !storedState) {
+    return false;
+  }
+  return returnedState === storedState;
+}
+
+
+// ==================== src\lib\utils\index.ts ====================
+import { type ClassValue, clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+
+// ==================== src\lib\utils\storage.ts ====================
+
+
+// ==================== src\middleware.ts ====================
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+  const sessionTicket = request.cookies.get('playfab_session')?.value;
+
+  // Skip middleware for static files and auth endpoints
+  if (
+    path.startsWith('/_next') ||
+    path.startsWith('/api/auth') ||
+    path.includes('.')
+  ) {
+    return NextResponse.next();
+  }
+
+  // Protected routes check
+  if (path.startsWith('/game')) {
+    if (!sessionTicket) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Redirect authenticated users from login to game
+  if (path === '/login' && sessionTicket) {
+    return NextResponse.redirect(new URL('/game', request.url));
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/game/:path*', '/login']
+};
+
+
+// ==================== src\styles\globals.css ====================
+@import url('https://fonts.googleapis.com/css2?family=Goldman:wght@400;700&family=Syne:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind utilities;
+@tailwind components;
+
+:root {
+  --dark-bg: #010003;
+  --bright-blue: #00e5ff;
+  --neon-pink: #e100ff;
+  --text: #e4e4e4;
+}
+
+@layer base {
+  body {
+    @apply font-syne bg-[#010003] text-[#e4e4e4] min-h-screen;
+  }
+
+  .nav-link {
+    @apply font-syne text-[#e4e4e4] no-underline text-base font-medium tracking-wider transition-colors duration-300 hover:text-[#00e5ff] relative;
+  }
+
+  .nav-link::after {
+    content: '';
+    @apply absolute bottom-[-5px] left-0 w-0 h-[1px] bg-[#00e5ff] transition-[width] duration-300;
+  }
+
+  .nav-link:hover::after {
+    @apply w-full;
+  }
+}
+
+.font-goldman {
+  font-family: 'Goldman', cursive;
+}
+
+// ==================== src\styles\tailwind.css ====================
+
+
+// ==================== src\types\test-utils.d.ts ====================
+import '@testing-library/jest-dom';
+import { PlayFabClient } from 'playfab-sdk';
+
+declare global {
+  namespace jest {
+    interface Matchers<R> {
+      toBeInTheDocument(): R;
+      toHaveTextContent(text: string): R;
+    }
+  }
+
+  interface Window {
+    PlayFabClientSDK: typeof PlayFabClient;
+  }
+}
+
+// Extend PlayFabClient for mocking
+declare module 'playfab-sdk' {
+  interface PlayFabClient {
+    IsClientLoggedIn: () => boolean;
+    settings: {
+      titleId: string;
+    };
+    GetPlayerProfile: (
+      request: any,
+      callback: (error: Error | null, result: any) => void
+    ) => void;
+  }
+}
+
+
+// ==================== src\utils\messageFormatter.ts ====================
+interface FormattedSegment {
+    type: 'text' | 'bold' | 'italic' | 'underline' | 'link' | 'image' | 'video';
+    content: string;
+    url?: string;
+    alt?: string;
+}
+
+export class MessageFormatter {
+    private static readonly PATTERNS = {
+        BOLD: /\*\*(.*?)\*\*/g,
+        ITALIC: /\*(.*?)\*/g,
+        UNDERLINE: /__(.*?)__/g,
+        LINK: /\[(.*?)\]\((https?:\/\/[^\s<>[\]()]+)\)/g,
+        IMAGE: /!image\[\](https?:\/\/[^\s<>[\]()]+)/g,
+        VIDEO: /!video\[\](https?:\/\/(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]+))/g
+    };
+
+    private static readonly URL_REGEX = /^https?:\/\/[^\s<>[\]()]+$/;
+    private static readonly ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4'];
+    private static readonly MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+
+    /**
+     * Parses a message into segments that can be rendered
+     */
+    public static parseMessage(message: string): FormattedSegment[] {
+        const segments: FormattedSegment[] = [];
+        let remainingText = message;
+        let lastIndex = 0;
+
+        // Helper function to add plain text segment
+        const addTextSegment = (text: string) => {
+            if (text) {
+                segments.push({ type: 'text', content: text });
+            }
+        };
+
+        // Process each pattern
+        while (lastIndex < remainingText.length) {
+            let earliestMatch: { pattern: RegExp; type: string; index: number; match: RegExpExecArray } | null = null;
+
+            // Find the earliest match among all patterns
+            for (const [key, pattern] of Object.entries(MessageFormatter.PATTERNS)) {
+                pattern.lastIndex = lastIndex;
+                const match = pattern.exec(remainingText);
+                if (match && (!earliestMatch || match.index < earliestMatch.index)) {
+                    earliestMatch = {
+                        pattern,
+                        type: key.toLowerCase(),
+                        index: match.index,
+                        match
+                    };
+                }
+            }
+
+            if (!earliestMatch) {
+                // No more patterns found, add remaining text
+                addTextSegment(remainingText.slice(lastIndex));
+                break;
+            }
+
+            // Add text before the match
+            addTextSegment(remainingText.slice(lastIndex, earliestMatch.index));
+
+            // Process the match based on its type
+            switch (earliestMatch.type) {
+                case 'bold':
+                    segments.push({
+                        type: 'bold',
+                        content: earliestMatch.match[1]
+                    });
+                    break;
+                case 'italic':
+                    segments.push({
+                        type: 'italic',
+                        content: earliestMatch.match[1]
+                    });
+                    break;
+                case 'underline':
+                    segments.push({
+                        type: 'underline',
+                        content: earliestMatch.match[1]
+                    });
+                    break;
+                case 'link':
+                    if (this.isValidUrl(earliestMatch.match[2])) {
+                        segments.push({
+                            type: 'link',
+                            content: earliestMatch.match[1],
+                            url: earliestMatch.match[2]
+                        });
+                    } else {
+                        addTextSegment(earliestMatch.match[0]);
+                    }
+                    break;
+                case 'image':
+                    if (this.isValidImageUrl(earliestMatch.match[1])) {
+                        segments.push({
+                            type: 'image',
+                            content: '',
+                            url: earliestMatch.match[1]
+                        });
+                    } else {
+                        addTextSegment(earliestMatch.match[0]);
+                    }
+                    break;
+                case 'video':
+                    if (this.isValidYoutubeUrl(earliestMatch.match[1])) {
+                        segments.push({
+                            type: 'video',
+                            content: '',
+                            url: `https://www.youtube.com/embed/${earliestMatch.match[2]}`
+                        });
+                    } else {
+                        addTextSegment(earliestMatch.match[0]);
+                    }
+                    break;
+            }
+
+            lastIndex = earliestMatch.index + earliestMatch.match[0].length;
+        }
+
+        return segments;
+    }
+
+    /**
+     * Validates a URL string
+     */
+    private static isValidUrl(url: string): boolean {
+        try {
+            new URL(url);
+            return MessageFormatter.URL_REGEX.test(url);
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Validates an image URL
+     */
+    private static isValidImageUrl(url: string): boolean {
+        if (!this.isValidUrl(url)) return false;
+        return MessageFormatter.ALLOWED_IMAGE_EXTENSIONS.some(ext => 
+            url.toLowerCase().endsWith(ext)
+        );
+    }
+
+    /**
+     * Validates a YouTube URL
+     */
+    private static isValidYoutubeUrl(url: string): boolean {
+        return this.isValidUrl(url) && url.includes('youtube.com/watch?v=');
+    }
+
+    /**
+     * Sanitizes text content to prevent XSS
+     */
+    public static sanitizeText(text: string): string {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    /**
+     * Formats a message for display, returning an array of segments
+     */
+    public static formatMessage(message: string): FormattedSegment[] {
+        // First sanitize the raw text
+        const sanitizedMessage = this.sanitizeText(message);
+        // Then parse the formatting
+        return this.parseMessage(sanitizedMessage);
+    }
+}
+
+export type { FormattedSegment };
+
+

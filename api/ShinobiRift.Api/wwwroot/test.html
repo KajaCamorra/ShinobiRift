@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SignalR Test</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.14/signalr.min.js"></script>
+    <script src="https://download.playfab.com/PlayFabClientApi.js"></script>
+    <style>
+        .log { 
+            font-family: monospace; 
+            margin: 10px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <h2>SignalR Connection Test</h2>
+        <div>PlayFab Status: <span id="playfabStatus">Not logged in</span></div>
+        <div>SignalR Status: <span id="signalrStatus">Disconnected</span></div>
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+        <hr />
+        <div>
+            <h3>Online Users</h3>
+            <button onclick="getOnlineUsers()">Refresh Users</button>
+            <pre id="users">No users</pre>
+        </div>
+        <hr />
+        <div>
+            <h3>Debug Log</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const DEBUG_USER_ID = 'DD3D3D7215360DAB';
+        const PLAYFAB_TITLE_ID = 'ACCD2';
+        const SESSION_STORAGE_KEY = 'playfab_session';
+        let connection = null;
+        let sessionTicket = null;
+        let playFabId = null;
+
+        function log(message, isError = false) {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.style.color = isError ? 'red' : 'black';
+            entry.textContent = `${new Date().toISOString()} - ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        // Initialize PlayFab
+        PlayFab.settings.titleId = PLAYFAB_TITLE_ID;
+        log('PlayFab initialized with title ID: ' + PLAYFAB_TITLE_ID);
+
+        // Try to restore session on page load
+        window.addEventListener('load', async () => {
+            const savedSession = localStorage.getItem(SESSION_STORAGE_KEY);
+            if (savedSession) {
+                const session = JSON.parse(savedSession);
+                log('Found saved session, attempting to reconnect...');
+                sessionTicket = session.sessionTicket;
+                playFabId = session.playFabId;
+                document.getElementById('playfabStatus').textContent = 'Logged in as: ' + playFabId;
+                await connectSignalR();
+            }
+        });
+
+        async function loginWithPlayFab() {
+            return new Promise((resolve, reject) => {
+                if (sessionTicket && playFabId) {
+                    log('Using existing session');
+                    resolve({ SessionTicket: sessionTicket, PlayFabId: playFabId });
+                    return;
+                }
+
+                const loginRequest = {
+                    CustomId: DEBUG_USER_ID,
+                    CreateAccount: true
+                };
+
+                log('Attempting PlayFab login...');
+                PlayFabClientSDK.LoginWithCustomID(loginRequest, (result, error) => {
+                    if (error) {
+                        log('PlayFab login error: ' + JSON.stringify(error), true);
+                        document.getElementById('playfabStatus').textContent = 'Error: ' + error.errorMessage;
+                        reject(error);
+                        return;
+                    }
+
+                    log('PlayFab login success: ' + JSON.stringify(result.data));
+                    sessionTicket = result.data.SessionTicket;
+                    playFabId = result.data.PlayFabId;
+
+                    // Save session
+                    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+                        sessionTicket: sessionTicket,
+                        playFabId: playFabId,
+                        timestamp: new Date().toISOString()
+                    }));
+
+                    document.getElementById('playfabStatus').textContent = 'Logged in as: ' + playFabId;
+                    resolve(result.data);
+                });
+            });
+        }
+
+        async function connectSignalR() {
+            try {
+                log('Connecting to SignalR...');
+
+                connection = new signalR.HubConnectionBuilder()
+                    .withUrl('http://localhost:5253/hubs/game', {
+                        headers: {
+                            'X-User-Id': playFabId,
+                            'X-Session-Token': sessionTicket
+                        },
+                        logging: signalR.LogLevel.Trace
+                    })
+                    .withAutomaticReconnect()
+                    .configureLogging(signalR.LogLevel.Trace)
+                    .build();
+
+                connection.onclose(error => {
+                    log('SignalR connection closed: ' + (error ? JSON.stringify(error) : 'No error details'), true);
+                    document.getElementById('signalrStatus').textContent = 'Disconnected';
+                });
+
+                connection.on('OnlineUsers', (users) => {
+                    log('Received online users: ' + JSON.stringify(users));
+                    document.getElementById('users').textContent = JSON.stringify(users, null, 2);
+                });
+
+                await connection.start();
+                log('SignalR connected successfully');
+                document.getElementById('signalrStatus').textContent = 'Connected';
+            } catch (err) {
+                log('Connection error: ' + JSON.stringify(err), true);
+                document.getElementById('signalrStatus').textContent = 'Error: ' + err.message;
+
+                // Clear session if connection fails
+                if (err.statusCode === 401) {
+                    localStorage.removeItem(SESSION_STORAGE_KEY);
+                    sessionTicket = null;
+                    playFabId = null;
+                    document.getElementById('playfabStatus').textContent = 'Not logged in';
+                }
+            }
+        }
+
+        async function connect() {
+            try {
+                // First login with PlayFab
+                log('Starting connection process...');
+                await loginWithPlayFab();
+                await connectSignalR();
+            } catch (err) {
+                log('Connection process failed: ' + JSON.stringify(err), true);
+            }
+        }
+
+        async function disconnect() {
+            if (connection) {
+                try {
+                    await connection.stop();
+                    log('SignalR disconnected');
+                    document.getElementById('signalrStatus').textContent = 'Disconnected';
+                } catch (err) {
+                    log('Disconnect error: ' + JSON.stringify(err), true);
+                    document.getElementById('signalrStatus').textContent = 'Error disconnecting: ' + err.message;
+                }
+            }
+        }
+
+        async function getOnlineUsers() {
+            if (connection && connection.state === signalR.HubConnectionState.Connected) {
+                try {
+                    log('Requesting online users...');
+                    await connection.invoke('GetOnlineUsers');
+                } catch (err) {
+                    log('GetOnlineUsers error: ' + JSON.stringify(err), true);
+                    document.getElementById('users').textContent = 'Error: ' + err.message;
+                }
+            } else {
+                log('Cannot get users: Not connected', true);
+                document.getElementById('users').textContent = 'Not connected';
+            }
+        }
+    </script>
+</body>
+</html>
