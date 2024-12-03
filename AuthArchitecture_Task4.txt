@@ -1,0 +1,139 @@
+Task 4: Activity Tracking System
+=======================================
+
+What We Want to Do
+-----------------
+We need to implement a robust activity tracking system that monitors user engagement, manages online status, and helps optimize session refresh timing. This system will track meaningful user actions across the application while minimizing overhead and maintaining accuracy.
+
+Why We Want to Do It
+-------------------
+Activity tracking serves several crucial functions in our application. First, it enables accurate online status display, helping players know who is actively engaged and available for interaction. Second, it allows us to optimize session management by refreshing sessions during periods of active use rather than interrupting gameplay. Third, it provides valuable data for system optimization and user engagement analysis.
+
+Our current implementation needs enhancement because it doesn't capture all relevant user actions and lacks the granularity needed for precise online status management. Additionally, we need better coordination of activity tracking across multiple tabs to prevent unnecessary API calls and ensure consistent status display.
+
+How We Want to Do It
+-------------------
+
+### Part 1: Activity State Management
+
+Required Implementation (For Cline):
+```typescript
+interface ActivityState {
+  lastActive: number;      // Unix timestamp
+  status: UserStatus;      // Current online status
+  activeTabId?: string;    // ID of tab handling real-time updates
+}
+
+enum UserStatus {
+  ACTIVE = 'active',       // Activity within last 5 minutes
+  ONLINE = 'online',       // Activity within last 15 minutes
+  AWAY = 'away',          // Activity within last 30 minutes
+  OFFLINE = 'offline'     // No activity for over 30 minutes
+}
+```
+
+These interfaces must be implemented exactly as shown because:
+- They define the core states needed for activity tracking
+- They enable consistent status display across the application
+- They support our multi-tab coordination requirements
+- Other system components rely on these specific values
+
+Implementation Guidance for Cline:
+1. Review current activity tracking mechanisms
+2. Implement state management using existing Redis infrastructure
+3. Add support for the new status gradations
+4. Ensure proper cleanup of stale states
+
+### Part 2: Activity Tracking
+
+Required Implementation (For Cline):
+```typescript
+interface ActivityTracker {
+  recordActivity(userId: string, type: ActivityType): Promise<void>;
+  getUserStatus(userId: string): Promise<UserStatus>;
+  subscribeToStatus(userId: string, callback: StatusCallback): () => void;
+  broadcastActivity(activity: ActivityEvent): Promise<void>;
+}
+
+enum ActivityType {
+  API_CALL = 'api_call',
+  CHAT_MESSAGE = 'chat_message',
+  GAME_ACTION = 'game_action',
+  PAGE_INTERACTION = 'page_interaction'
+}
+```
+
+This interface must be implemented exactly as shown because:
+- It provides consistent activity tracking across the application
+- It enables efficient status updates and subscriptions
+- It supports our planned analytics features
+- It maintains compatibility with existing systems
+
+Instructions for Cline
+---------------------
+
+1. Implement State Management:
+- Create activity state handling system
+- Implement status calculation logic
+- Add proper state cleanup
+- Write comprehensive tests
+
+2. Implement Activity Tracking:
+- Use specified ActivityTracker interface
+- Add activity broadcast handling
+- Implement subscription management
+- Ensure proper error handling
+
+3. Required Test Coverage:
+```typescript
+describe('Activity Tracking', () => {
+  it('should update status based on recent activity');
+  it('should broadcast activity across tabs');
+  it('should handle subscription lifecycle');
+  it('should clean up stale states');
+  it('should calculate status transitions correctly');
+});
+```
+
+Implementation Guidance for Cline:
+1. Examine existing real-time features
+2. Integrate with current Redis usage patterns
+3. Implement automatic cleanup processes
+4. Add proper monitoring and logging
+
+Instructions for User (Not for Cline)
+-----------------------------------
+
+1. Status Verification:
+- Verify status accuracy
+- Test status transitions
+- Check multi-tab behavior
+- Monitor status consistency
+
+2. Performance Testing:
+- Test high-activity scenarios
+- Verify Redis performance
+- Monitor memory usage
+- Check network impact
+
+3. Integration Testing:
+- Test with chat system
+- Verify game action tracking
+- Check API integration
+- Test offline behavior
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Status calculations working correctly
+- Test coverage complete and passing
+- Proper error handling implemented
+- Logging and monitoring configured
+
+For User:
+- Status updates appear accurate
+- Multi-tab coordination working
+- Performance remains stable
+- Integration with other features working

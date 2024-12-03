@@ -17,9 +17,21 @@ namespace ShinobiRift.Api.Middleware
             _logger = logger;
         }
 
+        private (string? userId, string? sessionTicket) GetAuthCredentials(HttpContext context)
+        {
+            // Try to get auth from headers
+            var userId = context.Request.Headers["X-User-Id"].ToString();
+            var sessionTicket = context.Request.Headers["X-Session-Token"].ToString();
+
+            return (userId, sessionTicket);
+        }
+
         public async Task InvokeAsync(HttpContext context, IUserSessionManager sessionManager, IPlayFabService playFabService)
         {
             _logger.LogInformation("Request path: {Path}", context.Request.Path);
+            _logger.LogInformation("Request details - Headers: {@Headers}, Query: {@Query}",
+                context.Request.Headers.ToDictionary(x => x.Key, x => x.Value.ToString()),
+                context.Request.Query.ToDictionary(x => x.Key, x => x.Value.ToString()));
 
             // Allow access to static files
             if (context.Request.Path.StartsWithSegments("/test.html") ||
@@ -40,67 +52,23 @@ namespace ShinobiRift.Api.Middleware
                 return;
             }
 
-            // For SignalR hub connections and negotiation
-            if (context.Request.Path.StartsWithSegments("/hubs/game"))
+            // Skip auth for SignalR negotiation
+            if (context.Request.Path.StartsWithSegments("/hubs/game/negotiate"))
             {
-                var userId = context.Request.Headers["X-User-Id"].ToString();
-                var sessionTicket = context.Request.Headers["X-Session-Token"].ToString();
-
-                _logger.LogInformation("SignalR request - UserId: {UserId}, HasSessionTicket: {HasSessionTicket}", 
-                    userId, !string.IsNullOrEmpty(sessionTicket));
-
-                if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(sessionTicket))
-                {
-                    _logger.LogWarning("Missing authentication headers for SignalR connection");
-                    context.Response.StatusCode = 401;
-                    await context.Response.WriteAsJsonAsync(new { message = "Authentication required for SignalR connection" });
-                    return;
-                }
-
-                try
-                {
-                    var isValidSession = await playFabService.ValidateSessionTicketAsync(sessionTicket);
-                    if (!isValidSession)
-                    {
-                        _logger.LogWarning("Invalid PlayFab session ticket for user {UserId}", userId);
-                        context.Response.StatusCode = 401;
-                        await context.Response.WriteAsJsonAsync(new { message = "Invalid session ticket" });
-                        return;
-                    }
-
-                    _logger.LogInformation("Valid PlayFab session for user {UserId}", userId);
-
-                    var claims = new List<Claim>
-                    {
-                        new Claim(ClaimTypes.NameIdentifier, userId),
-                        new Claim("SessionToken", sessionTicket)
-                    };
-
-                    var identity = new ClaimsIdentity(claims, "SignalR");
-                    context.User = new ClaimsPrincipal(identity);
-
-                    await _next(context);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error validating PlayFab session for user {UserId}", userId);
-                    context.Response.StatusCode = 500;
-                    await context.Response.WriteAsJsonAsync(new { message = "Error validating session" });
-                    return;
-                }
+                _logger.LogInformation("Allowing SignalR negotiation");
+                await _next(context);
+                return;
             }
 
             // For API endpoints
-            var apiUserId = context.Request.Headers["X-User-Id"].ToString();
-            var apiSessionTicket = context.Request.Headers["X-Session-Token"].ToString();
+            var (apiUserId, apiSessionTicket) = GetAuthCredentials(context);
 
             _logger.LogInformation("API request - UserId: {UserId}, HasSessionTicket: {HasSessionTicket}",
                 apiUserId, !string.IsNullOrEmpty(apiSessionTicket));
 
             if (string.IsNullOrEmpty(apiUserId) || string.IsNullOrEmpty(apiSessionTicket))
             {
-                _logger.LogWarning("Missing authentication headers for API request");
+                _logger.LogWarning("Missing authentication for API request");
                 context.Response.StatusCode = 401;
                 await context.Response.WriteAsJsonAsync(new { message = "Authentication required" });
                 return;
@@ -108,6 +76,16 @@ namespace ShinobiRift.Api.Middleware
 
             try
             {
+                // Validate PlayFab session
+                var isValidSession = await playFabService.ValidateSessionTicketAsync(apiSessionTicket);
+                if (!isValidSession)
+                {
+                    _logger.LogWarning("Invalid PlayFab session ticket for user {UserId}", apiUserId);
+                    context.Response.StatusCode = 401;
+                    await context.Response.WriteAsJsonAsync(new { message = "Invalid session ticket" });
+                    return;
+                }
+
                 // Get user's activity state
                 var activityState = await sessionManager.GetUserActivityStateAsync(apiUserId);
                 _logger.LogInformation("User {UserId} activity state: {State}", apiUserId, activityState);

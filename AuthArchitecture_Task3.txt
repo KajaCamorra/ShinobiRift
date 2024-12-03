@@ -1,0 +1,144 @@
+Task 3: Session Refresh Logic
+======================================
+
+What We Want to Do
+-----------------
+We need to implement an automatic session refresh system that maintains user authentication across both long-term usage and periods of inactivity. This system must coordinate refresh operations across multiple browser tabs while preventing race conditions and handling edge cases gracefully.
+
+Why We Want to Do It
+-------------------
+Our current session management needs enhancement to support several critical requirements:
+
+First, we need to maintain user sessions efficiently. When users keep our application open for extended periods, we must refresh their sessions before expiration to prevent disruptive logouts. This is especially important during active gameplay or chat sessions.
+
+Second, our multi-tab support requires coordinated session management. When a session refresh occurs in one tab, all other tabs need to update simultaneously to maintain a consistent authentication state. Without this coordination, users might experience unexpected logouts or authentication errors in some tabs while others continue working.
+
+Third, we need intelligent refresh timing. Rather than waiting until sessions are about to expire, we should refresh them proactively during periods of user activity to prevent any possibility of disruption.
+
+How We Want to Do It
+-------------------
+
+### Part 1: Refresh Timing System
+
+Required Implementation (For Cline):
+```typescript
+interface RefreshTiming {
+  // Time before expiry to trigger refresh
+  refreshThreshold: 86400000,  // 24 hours in milliseconds
+  
+  // Minimum time between refresh attempts
+  minRefreshInterval: 3600000, // 1 hour in milliseconds
+  
+  // Maximum retry attempts for failed refreshes
+  maxRetryAttempts: 3,
+  
+  // Delay between retry attempts
+  retryDelay: 5000  // 5 seconds in milliseconds
+}
+```
+
+These timing constants must be implemented exactly as shown because:
+- They prevent excessive refresh attempts
+- They ensure sufficient time for retry operations
+- They maintain consistency across all tabs
+- They optimize PlayFab API usage
+
+Implementation Guidance for Cline:
+1. Review current session timing implementation
+2. Implement refresh checks using these constants
+3. Add proper error handling for failed refreshes
+4. Integrate with existing monitoring systems
+
+### Part 2: Refresh Coordination
+
+Required Implementation (For Cline):
+```typescript
+interface RefreshCoordinator {
+  // Returns true if this tab should handle refresh
+  shouldHandleRefresh(): Promise<boolean>;
+  
+  // Notifies other tabs of successful refresh
+  broadcastRefresh(newTokens: TokenPair): Promise<void>;
+  
+  // Handles refresh broadcast from another tab
+  handleRefreshBroadcast(event: RefreshEvent): Promise<void>;
+  
+  // Releases refresh lock if this tab held it
+  releaseRefreshLock(): Promise<void>;
+}
+```
+
+This interface must be implemented exactly as shown because:
+- It prevents concurrent refresh attempts
+- It ensures all tabs receive updated tokens
+- It handles tab closure gracefully
+- It maintains consistent state across tabs
+
+Implementation Guidance for Cline:
+1. Examine existing BroadcastChannel usage
+2. Implement coordination using existing shared worker
+3. Ensure proper cleanup on tab closure
+4. Add comprehensive error handling
+
+Instructions for Cline
+---------------------
+
+1. Implement Refresh Timing:
+- Create refresh scheduling system
+- Implement retry logic
+- Add proper error handling
+- Write unit tests for timing logic
+
+2. Implement Tab Coordination:
+- Use specified RefreshCoordinator interface
+- Add broadcast channel handling
+- Implement lock management
+- Add proper cleanup handlers
+
+3. Required Test Coverage:
+```typescript
+describe('Session Refresh', () => {
+  it('should refresh before token expiration');
+  it('should coordinate refresh across tabs');
+  it('should handle refresh failures gracefully');
+  it('should clean up properly on tab close');
+  it('should prevent concurrent refresh attempts');
+});
+```
+
+Instructions for User (Not for Cline)
+-----------------------------------
+
+1. Functional Testing:
+- Test normal refresh flow
+- Verify multi-tab coordination
+- Test refresh failure handling
+- Verify cleanup on browser close
+
+2. Load Testing:
+- Test with maximum expected tab count
+- Verify performance under load
+- Monitor memory usage
+- Check network impact
+
+3. Edge Case Testing:
+- Test browser crashes
+- Test network interruptions
+- Verify offline handling
+- Test rapid tab opening/closing
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Test coverage complete and passing
+- Error handling implemented fully
+- Logging and monitoring configured
+- Proper cleanup implementation verified
+
+For User:
+- No unexpected logouts during normal use
+- Smooth multi-tab experience
+- Graceful handling of all error cases
+- Performance within acceptable limits

@@ -8,82 +8,127 @@ namespace ShinobiRift.Api.Hubs
     public class GameHub : Hub
     {
         private readonly IUserSessionManager _sessionManager;
+        private readonly IPlayFabService _playFabService;
         private readonly ILogger<GameHub> _logger;
 
-        public GameHub(IUserSessionManager sessionManager, ILogger<GameHub> logger)
+        public GameHub(
+            IUserSessionManager sessionManager,
+            IPlayFabService playFabService,
+            ILogger<GameHub> logger)
         {
             _sessionManager = sessionManager;
+            _playFabService = playFabService;
             _logger = logger;
         }
 
         public override async Task OnConnectedAsync()
         {
-            var userId = Context.GetHttpContext()?.Request.Headers["X-User-Id"].ToString();
-            if (string.IsNullOrEmpty(userId))
+            try
             {
-                throw new HubException("User ID is required");
-            }
+                var context = Context.GetHttpContext();
+                if (context == null)
+                {
+                    _logger.LogError("HTTP context is null");
+                    throw new HubException("HTTP context is required");
+                }
 
-            await _sessionManager.HandleConnectionAsync(userId, Context.ConnectionId);
-            await base.OnConnectedAsync();
+                // Get auth from query string
+                var userId = context.Request.Query["userId"].ToString();
+                var sessionTicket = context.Request.Query["sessionToken"].ToString();
+
+                _logger.LogInformation("Hub connection attempt - UserId: {UserId}, HasSessionTicket: {HasSessionTicket}, Query: {@Query}",
+                    userId, 
+                    !string.IsNullOrEmpty(sessionTicket),
+                    context.Request.Query.ToDictionary(x => x.Key, x => x.Value.ToString()));
+
+                if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(sessionTicket))
+                {
+                    _logger.LogWarning("Missing required authentication - UserId: {UserId}, HasSessionTicket: {HasSessionTicket}",
+                        userId, !string.IsNullOrEmpty(sessionTicket));
+                    throw new HubException("User ID and session ticket are required");
+                }
+
+                // Validate session ticket
+                var isValidSession = await _playFabService.ValidateSessionTicketAsync(sessionTicket);
+                if (!isValidSession)
+                {
+                    _logger.LogWarning("Invalid session ticket for user {UserId}", userId);
+                    throw new HubException("Invalid session ticket");
+                }
+
+                await _sessionManager.HandleConnectionAsync(userId, Context.ConnectionId);
+                await base.OnConnectedAsync();
+
+                _logger.LogInformation("Hub connection successful for user {UserId}", userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in OnConnectedAsync");
+                throw;
+            }
         }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            var userId = Context.GetHttpContext()?.Request.Headers["X-User-Id"].ToString();
-            if (!string.IsNullOrEmpty(userId))
+            try
             {
-                await _sessionManager.HandleDisconnectionAsync(userId, Context.ConnectionId);
-            }
+                var context = Context.GetHttpContext();
+                if (context != null)
+                {
+                    var userId = context.Request.Query["userId"].ToString();
+                    if (!string.IsNullOrEmpty(userId))
+                    {
+                        _logger.LogInformation("Hub disconnection for user {UserId}", userId);
+                        await _sessionManager.HandleDisconnectionAsync(userId, Context.ConnectionId);
+                    }
+                }
 
-            await base.OnDisconnectedAsync(exception);
+                await base.OnDisconnectedAsync(exception);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in OnDisconnectedAsync");
+                throw;
+            }
         }
 
-        public async Task UpdateActivity(string userId)
+        public async Task UpdateActivity()
         {
-            await _sessionManager.UpdateUserActivityAsync(userId);
-        }
-
-        public async Task JoinGroup(string groupName)
-        {
-            var userId = Context.GetHttpContext()?.Request.Headers["X-User-Id"].ToString();
-            if (string.IsNullOrEmpty(userId))
+            try
             {
-                throw new HubException("User ID is required");
+                var context = Context.GetHttpContext();
+                if (context == null)
+                {
+                    throw new HubException("HTTP context is required");
+                }
+
+                var userId = context.Request.Query["userId"].ToString();
+                if (string.IsNullOrEmpty(userId))
+                {
+                    throw new HubException("User ID is required");
+                }
+
+                await _sessionManager.UpdateUserActivityAsync(userId);
             }
-
-            await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
-            await _sessionManager.AddUserToGroupAsync(userId, groupName);
-        }
-
-        public async Task LeaveGroup(string groupName)
-        {
-            var userId = Context.GetHttpContext()?.Request.Headers["X-User-Id"].ToString();
-            if (string.IsNullOrEmpty(userId))
+            catch (Exception ex)
             {
-                throw new HubException("User ID is required");
+                _logger.LogError(ex, "Error in UpdateActivity");
+                throw;
             }
-
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
-            await _sessionManager.RemoveUserFromGroupAsync(userId, groupName);
-        }
-
-        public async Task SendToGroup(string groupName, string message)
-        {
-            var userId = Context.GetHttpContext()?.Request.Headers["X-User-Id"].ToString();
-            if (string.IsNullOrEmpty(userId))
-            {
-                throw new HubException("User ID is required");
-            }
-
-            await Clients.Group(groupName).SendAsync("ReceiveMessage", userId, message);
-            await _sessionManager.UpdateUserActivityAsync(userId);
         }
 
         public async Task GetOnlineUsers()
         {
-            var onlineUsers = await _sessionManager.GetOnlineUsersAsync();
-            await Clients.Caller.SendAsync("OnlineUsers", onlineUsers);
+            try
+            {
+                var onlineUsers = await _sessionManager.GetOnlineUsersAsync();
+                await Clients.Caller.SendAsync("OnlineUsers", onlineUsers);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetOnlineUsers");
+                throw;
+            }
         }
     }
 }

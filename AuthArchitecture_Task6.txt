@@ -1,0 +1,144 @@
+Task 6: Multi-Tab Coordination System
+=========================================
+
+What We Want to Do
+-----------------
+We need to implement a comprehensive multi-tab coordination system using a Shared Worker that manages a single SignalR connection, synchronizes session state, and coordinates authentication across all open browser tabs of our application. This system will serve as the central coordination point for all real-time communications and state management.
+
+Why We Want to Do It
+-------------------
+Our application needs to support users having multiple tabs open while maintaining consistent state and minimizing resource usage. The current implementation can lead to multiple SignalR connections, inconsistent states across tabs, and unnecessary server load. By implementing a Shared Worker-based coordination system, we can significantly reduce connection costs, ensure state consistency, and improve the user experience.
+
+This system solves several critical problems. It eliminates redundant SignalR connections by maintaining a single connection shared across all tabs. It ensures all tabs remain synchronized when session changes occur. It also provides efficient cleanup when tabs close, preventing resource leaks and ghost connections.
+
+How We Want to Do It
+-------------------
+
+### Part 1: Shared Worker Implementation
+
+Required Implementation (For Cline):
+```typescript
+interface SharedWorkerMessage {
+  type: WorkerMessageType;
+  payload: any;
+  tabId: string;
+  timestamp: number;
+}
+
+enum WorkerMessageType {
+  CONNECT = 'connect',
+  DISCONNECT = 'disconnect',
+  STATE_UPDATE = 'state_update',
+  SIGNALR_MESSAGE = 'signalr_message',
+  SESSION_REFRESH = 'session_refresh',
+  ERROR = 'error'
+}
+
+interface WorkerState {
+  activeTabId: string;
+  connectedTabs: Set<string>;
+  signalRConnection: SignalRConnection | null;
+  lastStateUpdate: number;
+  sessionData: SessionData | null;
+}
+```
+
+These interfaces must be implemented exactly as shown because:
+- They define the core communication protocol between tabs and worker
+- They maintain critical state information
+- They support proper cleanup and error recovery
+- Other system components depend on these specific message types
+
+### Part 2: Tab Communication
+
+Required Implementation (For Cline):
+```typescript
+interface TabCoordinator {
+  // Register tab with shared worker
+  register(): Promise<void>;
+  
+  // Send message to shared worker
+  sendMessage(type: WorkerMessageType, payload: any): Promise<void>;
+  
+  // Handle messages from shared worker
+  handleMessage(message: SharedWorkerMessage): Promise<void>;
+  
+  // Clean up tab resources
+  unregister(): Promise<void>;
+}
+```
+
+This interface must be implemented exactly as shown because:
+- It provides consistent communication patterns
+- It enables proper resource cleanup
+- It supports state synchronization
+- It maintains security boundaries
+
+Instructions for Cline
+---------------------
+
+1. Implement Shared Worker:
+- Create worker state management
+- Implement message handling
+- Add connection management
+- Write comprehensive tests
+
+2. Implement Tab Coordination:
+- Use specified TabCoordinator interface
+- Add message broadcast handling
+- Implement cleanup procedures
+- Add proper error handling
+
+3. Required Test Coverage:
+```typescript
+describe('Multi-Tab Coordination', () => {
+  it('should maintain single SignalR connection');
+  it('should synchronize state across tabs');
+  it('should handle tab lifecycle events');
+  it('should recover from worker crashes');
+  it('should clean up resources properly');
+});
+```
+
+Implementation Guidance for Cline:
+1. Review current tab management code
+2. Integrate with existing state management
+3. Implement proper error boundaries
+4. Add comprehensive logging
+
+Instructions for User (Not for Cline)
+-----------------------------------
+
+1. Functionality Testing:
+- Verify tab synchronization
+- Test connection sharing
+- Check state consistency
+- Monitor cleanup behavior
+
+2. Performance Testing:
+- Test with maximum expected tabs
+- Verify memory usage
+- Monitor CPU utilization
+- Check network efficiency
+
+3. Recovery Testing:
+- Test worker crashes
+- Verify tab closure handling
+- Check browser crashes
+- Test network interruptions
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Worker communication working correctly
+- Test coverage complete and passing
+- Error handling implemented properly
+- Logging and monitoring configured
+
+For User:
+- Tab coordination working smoothly
+- State remains consistent
+- Resource usage optimized
+- Recovery mechanisms verified

@@ -1,0 +1,143 @@
+Task 5: SignalR Integration with Token Authentication
+=================================================
+
+What We Want to Do
+-----------------
+We need to implement secure SignalR authentication that integrates with our token system while efficiently handling real-time connections across multiple tabs. This system must authenticate connections quickly, manage reconnection attempts securely, and coordinate connection state across browser tabs.
+
+Why We Want to Do It
+-------------------
+Our real-time features require secure and efficient SignalR connections. The current implementation needs enhancement to support our new token system and multi-tab functionality. By implementing proper SignalR authentication, we can ensure secure real-time communication while maintaining optimal connection management.
+
+This enhancement addresses several critical needs. First, it reduces our connection costs by sharing a single SignalR connection across multiple tabs. Second, it ensures secure authentication for all real-time communications. Third, it provides reliable connection state management, preventing issues like duplicate messages or missed updates.
+
+How We Want to Do It
+-------------------
+
+### Part 1: Connection Management
+
+Required Implementation (For Cline):
+```typescript
+interface SignalRConnection {
+  // Core connection configuration
+  connectionId: string;
+  activeHubs: string[];
+  lastConnected: number;
+  reconnectAttempts: number;
+  
+  // Connection state
+  status: ConnectionStatus;
+  error?: string;
+  
+  // Tab management
+  primaryTabId: string;
+  subscribedTabs: string[];
+}
+
+enum ConnectionStatus {
+  CONNECTING = 'connecting',
+  CONNECTED = 'connected',
+  RECONNECTING = 'reconnecting',
+  DISCONNECTED = 'disconnected'
+}
+```
+
+These interfaces must be implemented exactly as shown because:
+- They define the essential state needed for connection management
+- They support our multi-tab coordination requirements
+- They enable proper error handling and recovery
+- Other components depend on these specific states
+
+### Part 2: Authentication Flow
+
+Required Implementation (For Cline):
+```typescript
+interface SignalRAuthenticator {
+  // Get valid token for connection
+  getConnectionToken(): Promise<string>;
+  
+  // Handle token refresh during connection
+  handleTokenRefresh(): Promise<void>;
+  
+  // Manage connection state
+  updateConnectionState(status: ConnectionStatus): Promise<void>;
+  
+  // Handle connection errors
+  handleAuthenticationError(error: Error): Promise<void>;
+}
+```
+
+This interface must be implemented exactly as shown because:
+- It provides consistent authentication handling
+- It supports automatic token refresh
+- It enables proper error recovery
+- It maintains security during reconnection attempts
+
+Instructions for Cline
+---------------------
+
+1. Implement Connection Management:
+- Create connection state handling
+- Implement multi-tab coordination
+- Add proper error handling
+- Write comprehensive tests
+
+2. Implement Authentication Flow:
+- Use specified SignalRAuthenticator interface
+- Integrate with token service
+- Implement reconnection logic
+- Add monitoring and logging
+
+3. Required Test Coverage:
+```typescript
+describe('SignalR Integration', () => {
+  it('should authenticate connections with valid tokens');
+  it('should handle token refresh during active connections');
+  it('should coordinate connections across tabs');
+  it('should manage reconnection attempts properly');
+  it('should handle authentication failures gracefully');
+});
+```
+
+Implementation Guidance for Cline:
+1. Review existing SignalR implementation
+2. Integrate with new token system
+3. Implement shared worker communication
+4. Add comprehensive error handling
+
+Instructions for User (Not for Cline)
+-----------------------------------
+
+1. Connection Testing:
+- Verify secure connection establishment
+- Test reconnection behavior
+- Check authentication flow
+- Monitor connection stability
+
+2. Performance Testing:
+- Test with multiple simultaneous tabs
+- Verify message delivery reliability
+- Monitor connection overhead
+- Check resource usage
+
+3. Security Testing:
+- Verify token validation
+- Test connection hijacking prevention
+- Check secure reconnection
+- Verify proper cleanup
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Authentication flow working correctly
+- Test coverage complete and passing
+- Error handling implemented properly
+- Logging and monitoring configured
+
+For User:
+- Connections establish securely
+- Multi-tab coordination working
+- Performance remains stable
+- Security measures verified

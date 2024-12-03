@@ -1,61 +1,38 @@
 "use client";
 
 import React from 'react';
-import { Search } from 'lucide-react';
-import { FilterPanelProps } from '../types';
+import { UserFilters } from '../types';
 
-export const FilterPanel: React.FC<FilterPanelProps> = ({
-  filters,
-  onFiltersChange,
-}) => {
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onFiltersChange({
-      ...filters,
-      search: e.target.value,
-    });
-  };
+interface FilterPanelProps {
+  filters: UserFilters;
+  onFiltersChange: (filters: UserFilters) => void;
+}
 
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onFiltersChange({
-      ...filters,
-      status: e.target.value as 'all' | 'online' | 'offline',
-    });
-  };
-
+export function FilterPanel({ filters, onFiltersChange }: FilterPanelProps) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-4 bg-dark-bg/50 border border-bright-blue/20 rounded-lg mb-6">
-      {/* Search Input */}
-      <div className="relative flex-1 max-w-md">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-bright-blue/50" />
+    <div className="flex flex-wrap gap-4 mb-6">
+      <div className="flex-1 min-w-[200px]">
         <input
           type="text"
-          value={filters.search}
-          onChange={handleSearchChange}
           placeholder="Search users..."
-          className="w-full pl-10 pr-4 py-2 bg-dark-bg/50 border border-bright-blue/20 rounded-lg
-                   text-text placeholder-text/50 focus:outline-none focus:border-bright-blue/50
-                   transition-colors"
+          value={filters.search}
+          onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
+          className="w-full px-4 py-2 bg-dark-bg/50 border border-bright-blue/20 rounded-lg text-text placeholder:text-text/50 focus:outline-none focus:border-bright-blue/50"
         />
       </div>
-
-      {/* Status Filter */}
       <div className="flex items-center gap-2">
-        <label htmlFor="status-filter" className="text-text whitespace-nowrap">
-          Status:
-        </label>
+        <label className="text-text/80">Status:</label>
         <select
-          id="status-filter"
           value={filters.status}
-          onChange={handleStatusChange}
-          className="px-4 py-2 bg-dark-bg/50 border border-bright-blue/20 rounded-lg
-                   text-text focus:outline-none focus:border-bright-blue/50
-                   transition-colors cursor-pointer"
+          onChange={(e) => onFiltersChange({ ...filters, status: e.target.value as UserFilters['status'] })}
+          className="px-4 py-2 bg-dark-bg/50 border border-bright-blue/20 rounded-lg text-text focus:outline-none focus:border-bright-blue/50"
         >
           <option value="all">All</option>
+          <option value="active">Active</option>
           <option value="online">Online</option>
           <option value="offline">Offline</option>
         </select>
       </div>
     </div>
   );
-};
+}

@@ -1,31 +1,61 @@
-'use client';
+"use client";
 
-import { useAuth } from '@/contexts/AuthContext';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 
 export function DebugLoginButton() {
   const { debugLogin } = useAuth();
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleClick = async () => {
     console.log('Debug login button clicked');
+    if (!debugLogin) {
+      console.warn('Debug login is not enabled');
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+
     try {
-      await debugLogin?.();
-      console.log('Debug login successful');
-    } catch (error) {
-      console.error('Debug login failed:', error);
+      await debugLogin();
+      router.push('/game');
+    } catch (err) {
+      console.error('Debug login error:', err);
+      setError(err instanceof Error ? err.message : 'Debug login failed');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Only show in development
-  if (process.env.NODE_ENV !== 'development' || !process.env.NEXT_PUBLIC_ENABLE_DEBUG_AUTH) {
+  if (!debugLogin) {
     return null;
   }
 
   return (
-    <button
-      onClick={handleClick}
-      className="w-full px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
-    >
-      Debug Login
-    </button>
+    <div className="space-y-2">
+      {error && (
+        <div className="p-2 text-sm text-red-500 bg-red-100/10 rounded">
+          {error}
+        </div>
+      )}
+      
+      <button
+        onClick={handleClick}
+        disabled={loading}
+        className="
+          w-full px-4 py-2
+          bg-gray-700 hover:bg-gray-600
+          text-white rounded-md
+          transition-colors
+          disabled:opacity-50 disabled:cursor-not-allowed
+        "
+      >
+        {loading ? 'Connecting...' : 'Debug Login'}
+      </button>
+    </div>
   );
 }

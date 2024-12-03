@@ -14,22 +14,41 @@ export function middleware(request: NextRequest) {
     console.log('[Middleware] Processing game route request');
     
     // Check for session cookie
-    const sessionCookie = request.cookies.get('playfab_session');
+    const sessionCookie = request.cookies.get('session_token');
+    
+    if (DEBUG) {
+      console.log('[Middleware] Cookies:', {
+        all: request.cookies.getAll(),
+        session: sessionCookie,
+      });
+    }
     
     // If we have a session cookie, allow the request
     if (sessionCookie?.value) {
-      console.log('[Middleware] Valid session cookie found, allowing request');
+      console.log('[Middleware] Valid session cookie found allowing request');
       console.log('[Middleware] ==================== END ====================\n');
       return NextResponse.next();
     }
 
     // If we get here, we don't have a valid session
-    console.log('[Middleware] No valid session found, redirecting to home');
+    console.log('[Middleware] No valid session found redirecting to login');
     console.log('[Middleware] ==================== END ====================\n');
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  console.log('[Middleware] Non-game route, allowing request');
+  // For login page, check if user is already authenticated
+  if (request.nextUrl.pathname === '/login') {
+    console.log('[Middleware] Processing login route request');
+    
+    const sessionCookie = request.cookies.get('session_token');
+    if (sessionCookie?.value) {
+      console.log('[Middleware] User already authenticated, redirecting to game');
+      console.log('[Middleware] ==================== END ====================\n');
+      return NextResponse.redirect(new URL('/game', request.url));
+    }
+  }
+
+  console.log('[Middleware] Non-game route allowing request');
   console.log('[Middleware] ==================== END ====================\n');
   return NextResponse.next();
 }

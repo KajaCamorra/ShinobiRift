@@ -1,0 +1,137 @@
+This is the recommended authentication architecture:
+
+1. Initial Authentication Flow:
+- User logs in via Discord OAuth
+- Server validates Discord token and gets user info
+- PlayFab authentication happens with this info
+- Server generates two tokens:
+* Session Token (for API calls):
+- Contains session ID, user ID, expiry
+- Signed with server secret
+- Short format for headers
+* Access Token (for SignalR):
+- Contains same data as session token
+- Formatted as JWT
+- Includes SignalR-specific claims
+- Server creates a session containing:
+* PlayFab session ticket
+* User ID
+* Session expiry (e.g. 3 days)
+* Last active timestamp
+* Both token references
+
+2. Session Storage (Client-side):
+- Primary storage: HTTP-only cookie for the session token
+* Secure flag enabled
+* SameSite=Strict
+* Not accessible via JavaScript (security)
+* Contains session token
+- Secondary storage: localStorage for non-sensitive session data
+* User preferences
+* UI state
+* Last active timestamp
+* Access token for SignalR
+
+3. Session Storage (Server-side):
+- Redis for active session tracking:
+* Key: Session ID
+* Value: JSON containing:
+- Session data including PlayFab ticket
+- Both token references
+- Last activity timestamp
+- Connection state
+* TTL set to match session expiry
+- Helps validate sessions without constant PlayFab calls
+- Maintains token validity state
+
+4. Session Refresh Logic:
+- Check session validity on each page load
+- If valid but nearing expiry (e.g. <24h left):
+* Silently refresh PlayFab session
+* Generate new tokens
+* Update Redis session data
+* Update cookie expiry
+* Update SignalR connection with new access token
+- If expired:
+* Clear client storage
+* Close SignalR connection
+* Redirect to login
+
+5. Activity Tracking:
+- Update last active timestamp on:
+* API calls
+* SignalR messages
+* Important UI interactions
+- Store timestamp in both Redis and localStorage
+- Use for online status tracking
+- Token validation includes activity check
+
+6. SignalR Authentication:
+- Configure SignalR client with accessTokenFactory:
+```typescript
+// Returns the current access token or fetches a new one
+accessTokenFactory: async () => {
+// Check token expiry
+// Refresh if needed
+// Return current token
+}
+```
+- Pass access token in connection request
+- Validate token before WebSocket upgrade
+- Token validation middleware checks:
+* Token signature
+* Expiry
+* Session validity in Redis
+* Required claims
+- Maintain connection state in Redis
+- Handle reconnection with same session
+- Auto-refresh token when needed
+
+7. Multi-tab Handling:
+- Use broadcast channel to sync session state
+- Share SignalR connection via shared worker
+- Single source of truth for tokens
+- Sync activity status across tabs
+- Handle logout across all tabs
+- Coordinate token refresh across tabs
+
+8. Token Refresh Flow:
+- Monitored by shared worker
+- Triggers refresh when token nears expiry
+- Server validates current session before issuing new tokens
+- Updates all relevant storage:
+* Redis session data
+* HTTP-only cookie
+* localStorage (for SignalR token)
+- Broadcasts refresh to all tabs
+- Handles race conditions in multi-tab scenarios
+
+9. Security Considerations:
+- Session token never exposed to JavaScript
+- Access token only used for SignalR
+- All tokens have appropriate expiry
+- Tokens invalidated on logout
+- Server maintains token blacklist in Redis
+- Rate limiting on token refresh
+- Secure token generation using cryptographic methods
+
+10. Implementation Notes:
+- Keep token payload minimal
+- Use different token formats for different purposes
+- Maintain token version/rotation capability
+- Include proper error handling for all token operations
+- Log suspicious token activities
+- Implement token revocation capability
+- Consider implementing refresh tokens for longer sessions
+
+This architecture provides:
+- Secure session management
+- Reliable SignalR authentication
+- Proper token lifecycle
+- Multi-tab support
+- Clean separation of concerns
+- Scalable session storage
+- Activity tracking capabilities
+- Protection against common attack vectors
+
+How much of this do we already do and which parts currently differ?

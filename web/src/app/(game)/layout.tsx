@@ -11,7 +11,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { GameLayoutProvider } from '@/contexts/GameLayoutContext';
 
 const DEBUG = true;
-const RESTORE_TIMEOUT = 500; // 0,5 seconds to wait for session restoration
+const RESTORE_TIMEOUT = 700; // 0,7 seconds to wait for session restoration
 
 export default function GameLayout({
   children,
@@ -53,7 +53,9 @@ export default function GameLayout({
       console.log('[Game Layout] Showing loading state:', { 
         loading, 
         waitingForSession,
-        hasUser: !!user 
+        hasUser: !!user,
+        userId: user?.id,
+        hasSessionTicket: !!user?.sessionTicket
       });
     }
     return (
@@ -66,7 +68,8 @@ export default function GameLayout({
   if (DEBUG) {
     console.log('[Game Layout] Rendering game interface:', {
       userId: user.id,
-      displayName: user.displayName
+      displayName: user.displayName,
+      hasSessionTicket: !!user.sessionTicket
     });
   }
 

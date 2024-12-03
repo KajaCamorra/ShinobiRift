@@ -1,0 +1,165 @@
+Task 1: Base Session Management
+Note to Cline: Ignore the instructions "for User". Those are my tasks, only the parts for "Cline" should be touched by you!
+==============================
+
+What We Want to Do
+-----------------
+We need to create a secure session management system that handles user authentication state across our application. This system needs to validate user sessions quickly without constant PlayFab API calls, protect against common security vulnerabilities, and maintain accurate user activity tracking.
+
+Why We Want to Do It
+-------------------
+Our current authentication relies entirely on PlayFab, which presents several challenges:
+1. Frequent PlayFab API calls are expensive and slow
+2. We lack granular control over session expiration and activity tracking
+3. We need better security against cross-site scripting (XSS) and cross-site request forgery (CSRF) attacks
+4. Our real-time features require quick session validation
+
+By implementing our own session layer, we can:
+1. Reduce PlayFab API costs by caching session information
+2. Implement precise activity tracking for online status features
+3. Enhance security through HTTP-only cookies and strict CORS policies
+4. Better support our planned multi-tab functionality
+
+How We Want to Do It
+-------------------
+
+### Part 1: Session Data Storage
+
+Required Implementation (For Cline):
+```typescript
+interface SessionData {
+  userId: string;          // Required: PlayFab user ID
+  playfabTicket: string;   // Required: PlayFab session ticket
+  expiresAt: number;       // Required: Unix timestamp
+  lastActive: number;      // Required: Unix timestamp
+  sessionToken?: string;   // Required: Reference to HTTP-only cookie token
+  signalrToken?: string;   // Required: Reference to SignalR access token
+  authSource: AuthSource;  // Required: Authentication provider information
+}
+
+enum AuthSource {
+  DISCORD = 'discord',
+  GOOGLE = 'google',
+  FACEBOOK = 'facebook',
+  PLAYFAB_DEV = 'playfab_dev'  // Development-only authentication
+}
+```
+
+This interface must be implemented exactly as shown because:
+- Other components will rely on these field names
+- Each field serves a specific security or functionality purpose
+- We need consistent typing across the application
+- The authSource enables proper handling of different authentication flows
+- We need to distinguish between production and development authentication
+
+Implementation Guidance for Cline:
+Analyze the current codebase and:
+1. Review existing Redis setup and configuration
+2. Examine current session management approach
+3. Implement the SessionManager interface while maintaining compatibility with existing Redis usage
+4. Add environment-aware authentication handling
+5. Ensure proper handling of development-mode authentication
+6. Adapt the implementation to work with current error handling and logging systems
+7. Ensure the solution handles concurrent access based on our application's needs
+
+### Part 2: Cookie Security
+
+Required Implementation (For Cline):
+```typescript
+interface CookieConfig {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'strict' as const,
+  domain: string,
+  path: '/',
+  maxAge: 259200  // 3 days in seconds
+}
+```
+
+These settings must be implemented exactly as shown because:
+- HttpOnly prevents XSS attacks
+- Secure ensures HTTPS-only transmission
+- SameSite prevents CSRF attacks
+- The maxAge aligns with our session duration requirements
+
+Implementation Guidance for Cline:
+1. Review the current authentication flow and cookie handling
+2. Implement these security settings while preserving existing functionality
+3. Integrate with our current HTTP response handling
+4. Ensure compatibility with existing middleware and authentication systems
+5. Add proper environment detection for development mode
+
+Instructions for Cline
+---------------------
+
+1. Create Redis Session Manager:
+- Implement the SessionData interface exactly as specified
+- Create methods for CRUD operations on sessions
+- Include error handling and logging
+- Implement unit tests for all operations
+- Add environment-specific authentication handling
+- Implement proper development mode detection
+
+2. Implement Cookie Service:
+- Use the exact CookieConfig interface provided
+- Create methods for cookie management
+- Include proper TypeScript typing
+- Write unit tests for security settings
+- Ensure proper handling of development authentication
+
+3. Required Test Coverage:
+```typescript
+describe('Session Management', () => {
+  // Production auth tests
+  it('should store and retrieve sessions with correct data structure');
+  it('should enforce session expiration');
+  it('should handle concurrent updates safely');
+  it('should maintain proper security settings');
+  
+  // Development auth tests
+  it('should handle PlayFab development authentication');
+  it('should properly set auth source for development mode');
+  it('should validate development credentials');
+  it('should respect environment configuration');
+});
+```
+
+Instructions for User (Not for Cline)
+-----------------------------------
+
+1. Manual Security Testing:
+- Open Chrome DevTools
+- Verify cookie security settings
+- Test cross-origin access
+- Verify session persistence
+
+2. Integration Testing:
+- Test login flow end-to-end
+- Verify session expiration
+- Test multi-tab behavior
+- Monitor Redis performance
+
+3. Production Verification:
+- Monitor error rates
+- Track PlayFab API usage
+- Verify security headers
+- Test session timeout behavior
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented correctly
+- Unit tests passing for both production and development modes
+- Error handling implemented
+- Logging configured properly
+- Environment detection working correctly
+- Development authentication functioning properly
+
+For User:
+- Security settings verified
+- Cross-origin protection confirmed
+- Session persistence working
+- Performance metrics acceptable
+- OAuth providers properly integrated
+- Development mode functioning correctly

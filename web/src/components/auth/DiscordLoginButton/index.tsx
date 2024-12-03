@@ -28,7 +28,7 @@ export function DiscordLoginButton({ className = '' }: DiscordLoginButtonProps) 
     try {
       // Open popup centered
       const width = 500;
-      const height = 600;
+      const height = 800;
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
 

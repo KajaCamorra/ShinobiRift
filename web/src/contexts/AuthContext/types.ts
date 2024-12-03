@@ -2,19 +2,22 @@ export interface AuthUser {
   id: string;
   displayName: string;
   playfabId: string;
+  sessionToken: string;
+  accessToken: string;
+}
+
+export interface TokenResponse {
+  sessionToken: string;
+  accessToken: string;
+  expiresIn: number;
 }
 
 export interface LoginResult {
-  data: {
-    SessionTicket: string;
-    PlayFabId: string;
-    InfoResultPayload?: {
-      PlayerProfile?: {
-        DisplayName?: string;
-      };
-    };
-  };
-  discordId?: string;
+  sessionToken: string;
+  accessToken: string;
+  expiresIn: number;
+  playfabId: string;
+  displayName: string;
 }
 
 export interface AuthContextType {
@@ -23,5 +26,6 @@ export interface AuthContextType {
   error: Error | null;
   login: (result: LoginResult) => Promise<void>;
   logout: () => Promise<void>;
+  refreshTokens: () => Promise<void>;
   debugLogin?: () => Promise<void>;
 }

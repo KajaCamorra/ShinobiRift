@@ -1,0 +1,173 @@
+Task 2: Token System Implementation
+Note to Cline: Ignore the instructions "for User". Those are my tasks, only the parts for "Cline" should be touched by you!
+=================================
+
+What We Want to Do
+-----------------
+We need to implement a dual-token authentication system that separates API authentication from real-time SignalR connections. This system must securely handle both production OAuth-based authentication and development-mode PlayFab authentication while supporting our multi-tab functionality.
+
+Why We Want to Do It
+-------------------
+Our application requires distinct authentication mechanisms for different types of operations. The current implementation needs enhancement to support both production and development authentication flows while maintaining security standards and enabling efficient testing.
+
+A dual-token system provides several critical benefits. It allows us to maintain different security contexts for API calls versus real-time connections. It enables efficient token management across multiple tabs. Most importantly, it supports both our production OAuth providers and development testing needs while maintaining consistent security standards.
+
+How We Want to Do It
+-------------------
+
+### Part 1: Token Structure
+
+Required Implementation (For Cline):
+```typescript
+interface BaseToken {
+  sid: string;    // Session ID
+  uid: string;    // User ID
+  exp: number;    // Expiry timestamp
+  ats: AuthSource;// Authentication source
+}
+
+interface SessionToken extends BaseToken {
+  type: 'session';
+}
+
+interface SignalRToken extends BaseToken {
+  type: 'signalr';
+  hub: string[];  // Allowed hub connections
+}
+
+enum AuthSource {
+  DISCORD = 'discord',
+  GOOGLE = 'google',
+  FACEBOOK = 'facebook',
+  PLAYFAB_DEV = 'playfab_dev'
+}
+```
+
+These interfaces must be implemented exactly as shown because:
+- They define the minimum required security information
+- They enable proper type checking across the system
+- They support both production and development authentication
+- They maintain consistent security standards across environments
+- Other components will rely on these field names
+- They support our planned permission system
+
+### Part 2: Token Management
+
+Required Implementation (For Cline):
+```typescript
+interface TokenService {
+  generateSessionToken(
+    userId: string, 
+    sessionId: string, 
+    authSource: AuthSource
+  ): Promise<string>;
+
+  generateSignalRToken(
+    userId: string, 
+    sessionId: string, 
+    hubs: string[],
+    authSource: AuthSource
+  ): Promise<string>;
+
+  validateToken(token: string): Promise<BaseToken | null>;
+
+  refreshTokens(
+    sessionId: string, 
+    authSource: AuthSource
+  ): Promise<{
+    sessionToken: string;
+    signalRToken: string;
+  }>;
+}
+```
+
+These methods must be implemented exactly as shown because:
+- They provide the core functionality needed by other services
+- They maintain a clear separation of concerns
+- They support both production and development environments
+- They enable proper testing and validation
+
+Instructions for Cline
+---------------------
+
+1. Token Generation:
+- Implement both token types using specified interfaces
+- Ensure proper encryption and signing
+- Add comprehensive logging
+- Implement environment-aware token generation
+- Add proper handling for development authentication
+- Implement unit tests for all scenarios
+
+2. Token Storage:
+- Store token references in Redis sessions
+- Implement token blacklisting for revoked tokens
+- Handle token cleanup
+- Add monitoring for token operations
+- Ensure proper environment detection
+- Implement development mode safeguards
+
+3. Required Test Coverage:
+```typescript
+describe('Token System', () => {
+  // Production auth tests
+  it('should generate valid session tokens');
+  it('should generate valid SignalR tokens');
+  it('should detect and reject expired tokens');
+  it('should handle token refresh correctly');
+  it('should maintain token blacklist');
+  
+  // Development auth tests
+  it('should handle PlayFab development tokens');
+  it('should validate development credentials');
+  it('should properly set auth source');
+  it('should respect environment configuration');
+  it('should prevent development tokens in production');
+});
+```
+
+Instructions for User (Not for Cline)
+-----------------------------------
+
+1. Security Testing:
+- Verify token encryption in transit
+- Test token expiration handling
+- Verify token separation works
+- Test token refresh flow
+- Verify OAuth provider integration
+- Test development mode restrictions
+
+2. Integration Testing:
+- Verify API authentication
+- Test SignalR connections
+- Monitor token refresh behavior
+- Verify multi-tab handling
+- Test OAuth provider flows
+- Verify development access
+
+3. Performance Testing:
+- Monitor token validation speed
+- Track refresh operation timing
+- Verify Redis performance
+- Check memory usage
+- Test concurrent authentication
+- Monitor provider response times
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Token encryption working correctly
+- Unit tests passing for all environments
+- Error handling implemented
+- Logging and monitoring configured
+- Environment detection working properly
+- Development authentication functioning correctly
+
+For User:
+- Tokens properly encrypted in transit
+- Authentication working end-to-end
+- Token refresh functioning correctly
+- Performance metrics within bounds
+- OAuth providers properly integrated
+- Development mode functioning correctly

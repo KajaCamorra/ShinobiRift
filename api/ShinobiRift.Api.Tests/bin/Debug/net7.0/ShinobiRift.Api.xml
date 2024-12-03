@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>ShinobiRift.Api</name>
+    </assembly>
+    <members>
+        <member name="T:ShinobiRift.Api.Controllers.AuthController">
+            <summary>
+            Handles authentication operations including Discord OAuth login, session refresh, and logout
+            </summary>
+        </member>
+        <member name="M:ShinobiRift.Api.Controllers.AuthController.Login(ShinobiRift.Api.Models.AuthenticateRequest)">
+            <summary>
+            Authenticates a user using Discord OAuth code
+            </summary>
+            <param name="request">The authentication request containing the Discord OAuth code</param>
+            <returns>Session and access tokens upon successful authentication</returns>
+            <response code="200">Returns the token response when authentication is successful</response>
+            <response code="401">If the Discord authentication fails</response>
+            <response code="500">If there was an internal error during authentication</response>
+        </member>
+        <member name="M:ShinobiRift.Api.Controllers.AuthController.RefreshSession(ShinobiRift.Api.Models.RefreshSessionRequest)">
+            <summary>
+            Refreshes an existing session
+            </summary>
+            <param name="request">The refresh request containing the current session token</param>
+            <returns>New session and access tokens</returns>
+            <response code="200">Returns new tokens when refresh is successful</response>
+            <response code="401">If the session token is invalid or expired</response>
+            <response code="500">If there was an internal error during refresh</response>
+        </member>
+        <member name="M:ShinobiRift.Api.Controllers.AuthController.Logout">
+            <summary>
+            Logs out the current user and invalidates their session
+            </summary>
+            <returns>Success message upon logout</returns>
+            <response code="200">When logout is successful</response>
+            <response code="500">If there was an internal error during logout</response>
+        </member>
+    </members>
+</doc>

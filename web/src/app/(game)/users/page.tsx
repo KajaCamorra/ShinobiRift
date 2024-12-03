@@ -4,13 +4,17 @@ import React from 'react';
 import { useUsers } from '@/hooks/useUsers';
 import { Table } from '@/components/ui/Table';
 import { FilterPanel } from './components/FilterPanel';
-import { User } from './types';
+import { User, getActivityStateColor, getActivityStateText } from './types';
 import Link from 'next/link';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Column, SortDirection } from '@/components/ui/Table/types';
+import { useAuth } from '@/hooks/useAuth';
+
+const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
 
 export default function UsersPage() {
+  const { user: currentUser, loading: authLoading } = useAuth();
   const {
     users,
     loading,
@@ -64,23 +68,20 @@ export default function UsersPage() {
       }
     },
     {
-      key: 'isOnline',
+      key: 'activityState',
       header: 'Status',
       sortable: true,
-      render(value, row) {
-        const isOnline = value as boolean;
+      render(_, row) {
         return (
           <div className="flex items-center gap-2">
             <div
               className={cn(
-                "w-3 h-3 rounded-full",
-                isOnline
-                  ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"
-                  : "bg-gray-400"
+                "w-3 h-3 rounded-full transition-all duration-300",
+                getActivityStateColor(row.activityState)
               )}
             />
             <span className="text-text">
-              {isOnline ? "Online" : `Last seen ${formatLastActive(row.lastActive)}`}
+              {getActivityStateText(row.activityState, row.lastActive)}
             </span>
           </div>
         );
@@ -88,25 +89,23 @@ export default function UsersPage() {
     }
   ];
 
-  const formatLastActive = (timestamp: number): string => {
-    const now = Date.now();
-    const diff = now - timestamp;
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
+  // Show loading state while auth is initializing (except in dev mode)
+  if (!IS_DEVELOPMENT && authLoading) {
+    return (
+      <div className="p-4 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-bright-blue border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-    if (minutes < 60) {
-      return `${minutes} minutes ago`;
-    } else if (hours < 24) {
-      const remainingMinutes = minutes % 60;
-      return `${hours} hours ${remainingMinutes} minutes ago`;
-    } else if (days < 2) {
-      const remainingHours = hours % 24;
-      return `1 day ${remainingHours} hours ago`;
-    } else {
-      return `${days} days ago`;
-    }
-  };
+  // Show login prompt if not authenticated (except in dev mode)
+  if (!IS_DEVELOPMENT && !currentUser) {
+    return (
+      <div className="p-4 text-red-500">
+        Please log in to view users
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -122,6 +121,7 @@ export default function UsersPage() {
         <h1 className="text-2xl font-goldman text-bright-blue mb-2">Users</h1>
         <p className="text-text/80">
           View and manage users in your network
+          {IS_DEVELOPMENT && ' (Development Mode)'}
         </p>
       </div>
 

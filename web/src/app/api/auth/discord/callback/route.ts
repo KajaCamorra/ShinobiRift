@@ -1,194 +1,161 @@
-import { NextResponse } from 'next/server';
-import { PlayFabClient } from 'playfab-sdk';
+import { NextRequest } from 'next/server';
+import { cookies } from 'next/headers';
 
-const DEBUG = true;
-const DISCORD_CLIENT_ID = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
-const DISCORD_REDIRECT_URI = process.env.NEXT_PUBLIC_DISCORD_REDIRECT_URI || 'http://localhost:3000/api/auth/discord/callback';
-
-if (!PlayFabClient.IsClientLoggedIn() && process.env.NEXT_PUBLIC_PLAYFAB_TITLE_ID) {
-  PlayFabClient.settings.titleId = process.env.NEXT_PUBLIC_PLAYFAB_TITLE_ID;
-}
-
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    if (DEBUG) {
-      console.log('[Discord Callback] Processing Discord callback');
+    const searchParams = request.nextUrl.searchParams;
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
+    const error = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+
+    console.log('Discord callback received:', {
+      code: code ? 'present' : 'missing',
+      state: state ? 'present' : 'missing',
+      error,
+      errorDescription
+    });
+
+    // Verify state parameter
+    const cookieStore = cookies();
+    const storedState = cookieStore.get('discord_oauth_state')?.value;
+    
+    if (!storedState || storedState !== state) {
+      console.error('Invalid OAuth state:', { storedState, receivedState: state });
+      return new Response(
+        `
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage(
+                {
+                  type: 'ERROR',
+                  data: { message: 'Invalid OAuth state' }
+                },
+                window.location.origin
+              );
+              window.close();
+            </script>
+          </body>
+        </html>
+        `,
+        {
+          headers: { 'Content-Type': 'text/html' },
+        }
+      );
     }
 
-    // Get the authorization code from the URL
-    const url = new URL(request.url);
-    const code = url.searchParams.get('code');
-    const error = url.searchParams.get('error');
-    const errorDescription = url.searchParams.get('error_description');
-
-    if (error || errorDescription) {
-      throw new Error(errorDescription || error || 'Discord authorization failed');
+    if (error || !code) {
+      console.error('Discord callback error:', { error, errorDescription });
+      return new Response(
+        `
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage(
+                {
+                  type: 'ERROR',
+                  data: { message: '${errorDescription || error || 'No authorization code received'}' }
+                },
+                window.location.origin
+              );
+              window.close();
+            </script>
+          </body>
+        </html>
+        `,
+        {
+          headers: { 'Content-Type': 'text/html' },
+        }
+      );
     }
 
-    if (!code) {
-      throw new Error('No authorization code received');
-    }
-
-    if (DEBUG) {
-      console.log('[Discord Callback] Received authorization code');
-    }
-
-    // Exchange code for access token
-    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+    console.log('Exchanging code for tokens...');
+    // Exchange the code for tokens
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/login`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
       },
-      body: new URLSearchParams({
-        client_id: DISCORD_CLIENT_ID!,
-        client_secret: DISCORD_CLIENT_SECRET!,
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: DISCORD_REDIRECT_URI,
-      }),
+      credentials: 'include',
+      body: JSON.stringify({ discordCode: code }),
     });
 
-    if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.json().catch(() => ({}));
-      console.error('[Discord Callback] Token exchange error:', errorData);
-      throw new Error('Failed to exchange code for token');
-    }
-
-    const tokenData = await tokenResponse.json();
-
-    if (DEBUG) {
-      console.log('[Discord Callback] Received access token');
-    }
-
-    // Get user info from Discord
-    const userResponse = await fetch('https://discord.com/api/users/@me', {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-      },
-    });
-
-    if (!userResponse.ok) {
-      const errorData = await userResponse.json().catch(() => ({}));
-      console.error('[Discord Callback] User info error:', errorData);
-      throw new Error('Failed to get user info from Discord');
-    }
-
-    const userData = await userResponse.json();
-
-    if (DEBUG) {
-      console.log('[Discord Callback] Received Discord user data:', {
-        id: userData.id,
-        username: userData.username
-      });
-    }
-
-    // Login with PlayFab using Discord ID
-    const customId = `discord_${userData.id}`;
+    console.log('API response status:', response.status);
     
-    if (DEBUG) {
-      console.log('[Discord Callback] Attempting PlayFab login with ID:', customId);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API error:', errorText);
+      throw new Error('Failed to authenticate with Discord');
     }
 
-    const result = await new Promise((resolve, reject) => {
-      PlayFabClient.LoginWithCustomID({
-        CustomId: customId,
-        CreateAccount: true,
-        InfoRequestParameters: {
-          GetUserAccountInfo: true,
-          GetPlayerProfile: true,
-          GetUserInventory: false,
-          GetUserVirtualCurrency: false,
-          GetUserData: false,
-          GetPlayerStatistics: false,
-          GetTitleData: false,
-          GetUserReadOnlyData: false,
-          GetCharacterList: false,
-          GetCharacterInventories: false
-        }
-      }, (error, result) => {
-        if (error) {
-          console.error('[Discord Callback] PlayFab login error:', error);
-          reject(error);
-        } else {
-          console.log('[Discord Callback] PlayFab login success:', {
-            playFabId: result.data.PlayFabId,
-            hasSessionTicket: !!result.data.SessionTicket
-          });
-          resolve(result);
-        }
-      });
+    const data = await response.json();
+    console.log('API response data:', {
+      sessionToken: data.sessionToken ? 'present' : 'missing',
+      accessToken: data.accessToken ? 'present' : 'missing',
+      expiresIn: data.expiresIn,
+      playFabId: data.playFabId ? 'present' : 'missing',
+      displayName: data.displayName ? 'present' : 'missing'
     });
 
-    // Return success response with login data
-    const loginData = {
-      data: result,
-      discordId: userData.id
-    };
+    // Get the session cookie from the response
+    const setCookieHeader = response.headers.get('set-cookie');
+    console.log('Response cookie:', setCookieHeader);
 
+    // Create the response with the success message
     const html = `
-      <!DOCTYPE html>
       <html>
-        <head>
-          <title>Discord Login Success</title>
-        </head>
         <body>
           <script>
-            try {
-              window.opener.postMessage({
+            window.opener.postMessage(
+              {
                 type: 'SUCCESS',
-                data: ${JSON.stringify(loginData).replace(/</g, '\\u003c')}
-              }, window.location.origin);
-            } catch (err) {
-              console.error('Failed to post message:', err);
-            } finally {
-              window.close();
-            }
+                data: ${JSON.stringify(data)}
+              },
+              window.location.origin
+            );
+            window.close();
           </script>
         </body>
       </html>
     `;
 
-    return new NextResponse(html, {
-      headers: {
-        'Content-Type': 'text/html',
-      },
+    // Create response with cookies
+    const headers = new Headers({
+      'Content-Type': 'text/html',
     });
 
+    // Clear the state cookie
+    headers.append('Set-Cookie', 'discord_oauth_state=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0');
+
+    // Forward the session cookie from the API response
+    if (setCookieHeader) {
+      headers.append('Set-Cookie', setCookieHeader);
+    }
+
+    return new Response(html, { headers });
   } catch (error) {
-    console.error('[Discord Callback] Error:', error);
-    
-    // Return error page that posts message to opener
-    const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
-    const html = `
-      <!DOCTYPE html>
+    console.error('Discord callback error:', error);
+    return new Response(
+      `
       <html>
-        <head>
-          <title>Discord Login Error</title>
-        </head>
         <body>
           <script>
-            try {
-              window.opener.postMessage({
+            window.opener.postMessage(
+              {
                 type: 'ERROR',
-                data: {
-                  message: ${JSON.stringify(errorMessage).replace(/</g, '\\u003c')}
-                }
-              }, window.location.origin);
-            } catch (err) {
-              console.error('Failed to post message:', err);
-            } finally {
-              window.close();
-            }
+                data: { message: 'Authentication failed' }
+              },
+              window.location.origin
+            );
+            window.close();
           </script>
         </body>
       </html>
-    `;
-
-    return new NextResponse(html, {
-      headers: {
-        'Content-Type': 'text/html',
-      },
-    });
+      `,
+      {
+        headers: { 'Content-Type': 'text/html' },
+      }
+    );
   }
 }

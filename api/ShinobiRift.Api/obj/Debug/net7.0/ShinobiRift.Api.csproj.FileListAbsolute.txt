@@ -42,3 +42,14 @@ E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\obj\Debug\net7.0\Shinob
 E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\obj\Debug\net7.0\ShinobiRift.Api.genruntimeconfig.cache
 E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\obj\Debug\net7.0\ref\ShinobiRift.Api.dll
 E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\ShinobiRift.Api.staticwebassets.runtime.json
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\Microsoft.AspNetCore.Authentication.JwtBearer.dll
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\Microsoft.AspNetCore.OpenApi.dll
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\Microsoft.IdentityModel.Abstractions.dll
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\Microsoft.IdentityModel.JsonWebTokens.dll
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\Microsoft.IdentityModel.Logging.dll
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\Microsoft.IdentityModel.Protocols.dll
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\Microsoft.IdentityModel.Tokens.dll
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\System.IdentityModel.Tokens.Jwt.dll
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\bin\Debug\net7.0\ShinobiRift.Api.xml
+E:\Onedrive\07_Projects\shinobi-rift\api\ShinobiRift.Api\obj\Debug\net7.0\ShinobiRift.Api.xml
