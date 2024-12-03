@@ -9,19 +9,32 @@ export function middleware(request: NextRequest) {
   console.log(`[Middleware] Request method: ${request.method}`);
   console.log(`[Middleware] Pathname: ${request.nextUrl.pathname}`);
 
+  // Get session cookie
+  const sessionCookie = request.cookies.get('session_token');
+
+  // Log cookies in debug mode
+  if (DEBUG) {
+    console.log('[Middleware] Cookies:', {
+      all: request.cookies.getAll(),
+      session: sessionCookie,
+    });
+  }
+
+  // Check if this is the root path and user is authenticated
+  if (request.nextUrl.pathname === '/') {
+    if (sessionCookie?.value) {
+      console.log('[Middleware] User is authenticated, redirecting to game');
+      console.log('[Middleware] ==================== END ====================\n');
+      return NextResponse.redirect(new URL('/game', request.url));
+    }
+    console.log('[Middleware] Non-game route allowing request');
+    console.log('[Middleware] ==================== END ====================\n');
+    return NextResponse.next();
+  }
+
   // Check if this is a game route
   if (request.nextUrl.pathname.startsWith('/game')) {
     console.log('[Middleware] Processing game route request');
-    
-    // Check for session cookie
-    const sessionCookie = request.cookies.get('session_token');
-    
-    if (DEBUG) {
-      console.log('[Middleware] Cookies:', {
-        all: request.cookies.getAll(),
-        session: sessionCookie,
-      });
-    }
     
     // If we have a session cookie, allow the request
     if (sessionCookie?.value) {
@@ -40,7 +53,6 @@ export function middleware(request: NextRequest) {
   if (request.nextUrl.pathname === '/login') {
     console.log('[Middleware] Processing login route request');
     
-    const sessionCookie = request.cookies.get('session_token');
     if (sessionCookie?.value) {
       console.log('[Middleware] User already authenticated, redirecting to game');
       console.log('[Middleware] ==================== END ====================\n');
