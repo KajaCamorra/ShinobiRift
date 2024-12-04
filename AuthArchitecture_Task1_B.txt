@@ -1,0 +1,103 @@
+Task B: Rate Limiting Implementation
+Note to Cline: Ignore the instructions "for User". Those are my tasks, only the parts for "Cline" should be touched by you!
+=========================================
+
+What We Want to Do
+-----------------
+We need to implement a rate limiting system that protects our authentication endpoints from abuse while ensuring legitimate users maintain access to our services. This system must work seamlessly with our existing authentication flow and support both development and production environments.
+
+Why We Want to Do It
+-------------------
+Rate limiting is essential for protecting our authentication system from brute force attacks and denial of service attempts. By implementing proper rate limiting, we can prevent abuse of our services while maintaining availability for legitimate users. This is particularly important for our authentication endpoints, which are often targets for automated attacks.
+
+How We Want to Do It
+-------------------
+
+### Part 1: Rate Limit Configuration
+
+Required Implementation (For Cline):
+```typescript
+interface RateLimitConfig {
+  windowSeconds: number;      // Time window for rate limiting
+  maxAttempts: number;       // Maximum attempts within window
+  blockDuration: number;     // Duration of blocking after limit exceeded
+}
+
+interface RateLimitKey {
+  type: 'ip' | 'userId' | 'custom';
+  value: string;
+  environment: string;       // Development or production identifier
+}
+```
+
+These interfaces must be implemented exactly as shown because:
+- They define essential rate limiting parameters
+- They enable flexible rate limiting strategies
+- They maintain separation between environments
+- Other system components will rely on these structures
+
+### Part 2: Rate Limiting Service
+
+Required Implementation (For Cline):
+```typescript
+interface RateLimitService {
+  isAllowed(key: RateLimitKey): Promise<{
+    allowed: boolean;
+    remaining: number;
+    resetTime: number;
+  }>;
+  
+  recordAttempt(key: RateLimitKey): Promise<void>;
+  
+  clearLimit(key: RateLimitKey): Promise<void>;
+}
+```
+
+This interface must be implemented exactly as shown because:
+- It provides the core functionality needed for rate limiting
+- It enables proper request tracking and limiting
+- It supports our monitoring requirements
+- It maintains compatibility with our existing Redis usage
+
+Implementation Guidance for Cline:
+1. Review our current Redis implementation
+2. Check existing request handling middleware
+3. Implement rate limiting service with Redis integration
+4. Add proper monitoring and logging
+
+Instructions for Cline
+---------------------
+
+1. Create Rate Limiting Implementation:
+- Use the specified interfaces
+- Implement Redis-based rate tracking
+- Add proper error handling
+- Create comprehensive logging
+- Ensure environment-specific limits
+
+2. Required Test Coverage:
+```typescript
+describe('Rate Limiting', () => {
+  it('should allow requests within limits');
+  it('should block requests exceeding limits');
+  it('should reset limits after window expiration');
+  it('should handle concurrent requests properly');
+  it('should respect environment-specific configurations');
+});
+```
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Rate limiting working correctly in all environments
+- Test coverage complete and passing
+- Error handling implemented
+- Proper monitoring and logging configured
+
+For User:
+- Rate limits effective against rapid requests
+- Legitimate users unaffected
+- Proper blocking of excessive attempts
+- Clear error responses for limited requests

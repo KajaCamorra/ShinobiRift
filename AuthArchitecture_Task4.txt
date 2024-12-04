@@ -1,4 +1,5 @@
 Task 4: Activity Tracking System
+Note to Cline: Ignore the instructions "for User". Those are my tasks, only the parts for "Cline" should be touched by you!
 =======================================
 
 What We Want to Do

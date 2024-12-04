@@ -1,0 +1,99 @@
+Task F: Health Check Implementation
+Note to Cline: Ignore the instructions "for User". Those are my tasks, only the parts for "Cline" should be touched by you!
+=================================
+
+What We Want to Do
+-----------------
+We need to implement a comprehensive health check system that monitors the status of our authentication components, session management, and dependencies. This system will help us identify and diagnose issues quickly during both development and production operations.
+
+Why We Want to Do It
+-------------------
+Health checks are essential for maintaining system reliability and quickly identifying problems. During development, they help us verify that all components are functioning correctly. When we transition to production, these same health checks will support our monitoring and alerting systems.
+
+How We Want to Do It
+-------------------
+
+### Part 1: Health Check Structure
+
+Required Implementation (For Cline):
+```typescript
+interface HealthStatus {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  component: string;
+  message: string;
+  timestamp: number;
+  details?: Record<string, unknown>;
+}
+
+interface HealthCheck {
+  name: string;
+  description: string;
+  check(): Promise<HealthStatus>;
+  getDependencies(): string[];
+}
+```
+
+These interfaces must be implemented exactly as shown because they define our core health monitoring capabilities and will be used by other system components to report their status. The structure supports both development diagnostics and future production monitoring needs.
+
+### Part 2: Health Service
+
+Required Implementation (For Cline):
+```typescript
+interface HealthService {
+  registerCheck(check: HealthCheck): void;
+  
+  runChecks(): Promise<{
+    status: HealthStatus;
+    details: {
+      [key: string]: HealthStatus;
+    };
+  }>;
+
+  getComponentStatus(componentName: string): Promise<HealthStatus>;
+}
+```
+
+This interface must be implemented exactly as shown because it provides the standard methods needed for health monitoring across our system. It supports both individual component checks and comprehensive system status reporting.
+
+Implementation Guidance for Cline:
+1. Review our current authentication and session components
+2. Examine existing Redis and SignalR implementations
+3. Design health checks that work with our local development setup
+4. Plan for future production monitoring integration
+
+Instructions for Cline
+---------------------
+
+1. Create Health Check Implementation:
+- Implement the core interfaces
+- Add checks for Redis connectivity
+- Add checks for SignalR status
+- Implement session management health verification
+- Add proper error handling and logging
+
+2. Required Test Coverage:
+```typescript
+describe('Health Checks', () => {
+  it('should detect Redis connectivity issues');
+  it('should verify SignalR functionality');
+  it('should monitor session management');
+  it('should aggregate component status correctly');
+  it('should provide detailed error information');
+});
+```
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Health checks working in development environment
+- Test coverage complete and passing
+- Integration with logging system
+- Clear error reporting implemented
+
+For User:
+- Easy system status verification
+- Quick problem identification
+- Clear component status reporting
+- Simple diagnostic capabilities

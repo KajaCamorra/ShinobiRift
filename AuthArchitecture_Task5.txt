@@ -1,4 +1,5 @@
 Task 5: SignalR Integration with Token Authentication
+Note to Cline: Ignore the instructions "for User". Those are my tasks, only the parts for "Cline" should be touched by you!
 =================================================
 
 What We Want to Do

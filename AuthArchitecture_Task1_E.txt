@@ -1,0 +1,125 @@
+Revised Task E: Development-Ready Configuration Management
+Note to Cline: Ignore the instructions "for User". Those are my tasks, only the parts for "Cline" should be touched by you!
+=======================================================
+
+What We Want to Do
+-----------------
+We need to implement a configuration management system that works effectively in our local development environment while being designed for an easy transition to production-grade security measures later. This system should handle sensitive application settings and support multiple environments without requiring immediate cloud infrastructure.
+
+Why We Want to Do It
+-------------------
+While we're developing locally, we still need to protect sensitive information and maintain proper separation between environments. Our configuration management should provide a secure foundation that can later be extended to use Azure Key Vault or similar services when we move to production, without requiring significant architectural changes.
+
+How We Want to Do It
+-------------------
+
+### Part 1: Configuration Structure
+
+Required Implementation (For Cline):
+```typescript
+interface AuthenticationConfig {
+  readonly oauth: {
+    discord: OAuthProviderConfig;
+    google: OAuthProviderConfig;
+    facebook: OAuthProviderConfig;
+  };
+  readonly playfab: {
+    titleId: string;
+    secretKey: string;
+  };
+  readonly security: {
+    tokenSecret: string;
+    tokenExpiry: number;
+    refreshWindow: number;
+  };
+}
+
+interface OAuthProviderConfig {
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly callbackUrl: string;
+  readonly scopes: string[];
+}
+```
+
+These interfaces must be implemented exactly as shown because:
+- They define our required configuration structure
+- They ensure type safety for sensitive settings
+- They maintain consistency across environments
+- They support future production security requirements
+- Other components depend on these configurations
+
+### Part 2: Configuration Service
+
+Required Implementation (For Cline):
+```typescript
+interface ConfigurationService {
+  // Returns environment-specific configuration
+  getAuthConfig(): Promise<AuthenticationConfig>;
+  
+  // Get provider-specific OAuth configuration
+  getOAuthConfig(provider: AuthSource): Promise<OAuthProviderConfig>;
+  
+  // Get security settings with local development support
+  getSecuritySettings(): Promise<SecurityConfig>;
+  
+  // Support for configuration updates
+  reloadConfiguration(): Promise<void>;
+  
+  // Validate configuration completeness
+  validateConfiguration(): Promise<ValidationResult>;
+}
+```
+
+This interface must be implemented exactly as shown because:
+- It provides standardized configuration access
+- It enables local secret management now
+- It supports future security enhancements
+- It maintains type safety
+- It enables configuration validation
+
+Implementation Guidance for Cline:
+1. Review current configuration management
+2. Implement using .env files for local development
+3. Add proper configuration validation
+4. Design for future production enhancement
+5. Structure code to make future Azure integration simple
+
+Instructions for Cline
+---------------------
+
+1. Implement Configuration Management:
+- Create configuration service implementation
+- Add environment file handling
+- Implement validation logic
+- Add proper error messages for missing configs
+- Ensure development-friendly debugging
+
+2. Required Test Coverage:
+```typescript
+describe('Configuration Management', () => {
+  it('should load configurations from environment');
+  it('should validate required settings');
+  it('should handle development environment');
+  it('should protect sensitive values');
+  it('should support configuration updates');
+});
+```
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Local development configuration working
+- Test coverage complete and passing
+- Environment separation maintained
+- Configuration validation implemented
+- Code structured for future production enhancement
+
+For User:
+- Easy local development
+- Protected sensitive data
+- Simple configuration updates
+- Clear validation messages
+- Path to production clear

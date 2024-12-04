@@ -14,6 +14,7 @@ namespace ShinobiRift.Api.Controllers
         private readonly IPlayFabService _playFab;
         private readonly ITokenService _tokenService;
         private readonly ISessionService _sessionService;
+        private readonly ICsrfTokenService _csrfTokenService;
         private readonly SessionSettings _sessionSettings;
         private readonly ILogger<AuthController> _logger;
         private readonly IWebHostEnvironment _environment;
@@ -23,6 +24,7 @@ namespace ShinobiRift.Api.Controllers
             IPlayFabService playFab,
             ITokenService tokenService,
             ISessionService sessionService,
+            ICsrfTokenService csrfTokenService,
             AppSettings appSettings,
             ILogger<AuthController> logger,
             IWebHostEnvironment environment)
@@ -31,6 +33,7 @@ namespace ShinobiRift.Api.Controllers
             _playFab = playFab;
             _tokenService = tokenService;
             _sessionService = sessionService;
+            _csrfTokenService = csrfTokenService;
             _sessionSettings = appSettings.Session;
             _logger = logger;
             _environment = environment;
@@ -42,7 +45,7 @@ namespace ShinobiRift.Api.Controllers
             return new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true, // Always use Secure when SameSite=None
+                Secure = true,
                 SameSite = isDevelopment ? SameSiteMode.None : SameSiteMode.Strict,
                 Path = "/",
                 Expires = DateTimeOffset.UtcNow.AddDays(_sessionSettings.SessionExpirationDays)
@@ -91,6 +94,11 @@ namespace ShinobiRift.Api.Controllers
                 _logger.LogInformation("Setting session cookie...");
                 Response.Cookies.Append("session_token", sessionToken, GetSecureCookieOptions());
 
+                // Generate CSRF token after session is saved
+                _logger.LogInformation("Generating CSRF token...");
+                var csrfToken = await _csrfTokenService.GenerateTokenAsync(sessionId);
+                Response.Cookies.Append("csrf_token", csrfToken, GetSecureCookieOptions());
+
                 var response = new TokenResponse
                 {
                     SessionToken = sessionToken,
@@ -137,6 +145,7 @@ namespace ShinobiRift.Api.Controllers
                 {
                     _logger.LogWarning("Session expired: {SessionId}", sessionId);
                     await _sessionService.RemoveSessionAsync(sessionId!);
+                    await _csrfTokenService.InvalidateTokenAsync(sessionId!);
                     return Unauthorized("Session expired");
                 }
 
@@ -145,6 +154,7 @@ namespace ShinobiRift.Api.Controllers
                 {
                     _logger.LogWarning("PlayFab session expired: {SessionId}", sessionId);
                     await _sessionService.RemoveSessionAsync(sessionId!);
+                    await _csrfTokenService.InvalidateTokenAsync(sessionId!);
                     return Unauthorized("PlayFab session expired");
                 }
 
@@ -157,7 +167,11 @@ namespace ShinobiRift.Api.Controllers
 
                 await _sessionService.SaveSessionAsync(session);
 
+                // Generate new CSRF token
+                var newCsrfToken = await _csrfTokenService.GenerateTokenAsync(sessionId!);
+
                 Response.Cookies.Append("session_token", newSessionToken, GetSecureCookieOptions());
+                Response.Cookies.Append("csrf_token", newCsrfToken, GetSecureCookieOptions());
 
                 return Ok(new TokenResponse
                 {
@@ -187,11 +201,13 @@ namespace ShinobiRift.Api.Controllers
                 if (!string.IsNullOrEmpty(sessionToken) && 
                     _tokenService.ValidateSessionToken(sessionToken, out var sessionId, out _))
                 {
-                    _logger.LogInformation("Removing session: {SessionId}", sessionId);
+                    _logger.LogInformation("Removing session and CSRF token: {SessionId}", sessionId);
                     await _sessionService.RemoveSessionAsync(sessionId!);
+                    await _csrfTokenService.InvalidateTokenAsync(sessionId!);
                 }
 
                 Response.Cookies.Delete("session_token", GetSecureCookieOptions());
+                Response.Cookies.Delete("csrf_token", GetSecureCookieOptions());
 
                 _logger.LogInformation("Logout completed successfully");
                 return Ok(new { message = "Logged out successfully" });

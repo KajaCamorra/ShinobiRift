@@ -1,0 +1,128 @@
+Task C: Structured Logging Implementation
+Note to Cline: Ignore the instructions "for User". Those are my tasks, only the parts for "Cline" should be touched by you!
+=========================================
+
+What We Want to Do
+-----------------
+We need to implement a comprehensive structured logging system that provides clear visibility into our authentication and session management processes. This system should capture meaningful events, errors, and performance metrics while maintaining proper security and privacy standards.
+
+Why We Want to Do It
+-------------------
+Proper logging is essential for monitoring system health, diagnosing issues, and maintaining security compliance. Our current implementation lacks the structured logging necessary for effective monitoring and troubleshooting. By implementing structured logging, we can better understand system behavior, identify potential security issues, and maintain audit trails for authentication events.
+
+How We Want to Do It
+-------------------
+
+### Part 1: Log Structure
+
+Required Implementation (For Cline):
+```typescript
+interface AuthLogEvent {
+  eventId: string;        // Unique identifier for the event
+  timestamp: number;      // Unix timestamp
+  level: LogLevel;        // Error, warn, info, debug
+  category: LogCategory;  // Auth, Session, Token, etc.
+  userId?: string;        // Associated user if available
+  sessionId?: string;     // Associated session if available
+  message: string;        // Human-readable description
+  data: Record<string, unknown>; // Additional context
+  environment: string;    // Production/development
+}
+
+enum LogLevel {
+  ERROR = 'error',
+  WARN = 'warn',
+  INFO = 'info',
+  DEBUG = 'debug'
+}
+
+enum LogCategory {
+  AUTH = 'auth',
+  SESSION = 'session',
+  TOKEN = 'token',
+  RATE_LIMIT = 'rate_limit',
+  CSRF = 'csrf'
+}
+```
+
+These interfaces must be implemented exactly as shown because:
+- They define our standard logging format
+- They enable consistent event tracking
+- They maintain proper privacy boundaries
+- They support our monitoring requirements
+- Other components will rely on this structure
+
+### Part 2: Logging Service
+
+Required Implementation (For Cline):
+```typescript
+interface LoggingService {
+  logAuthEvent(event: Omit<AuthLogEvent, 'eventId' | 'timestamp'>): Promise<void>;
+  
+  logError(
+    category: LogCategory,
+    error: Error,
+    context?: Record<string, unknown>
+  ): Promise<void>;
+  
+  getRecentEvents(
+    filter: {
+      level?: LogLevel;
+      category?: LogCategory;
+      userId?: string;
+      sessionId?: string;
+    },
+    limit: number
+  ): Promise<AuthLogEvent[]>;
+}
+```
+
+This interface must be implemented exactly as shown because:
+- It provides standardized logging methods
+- It enables proper error tracking
+- It supports security auditing requirements
+- It maintains consistency across the system
+
+Implementation Guidance for Cline:
+1. Review our current logging implementation
+2. Check existing error handling patterns
+3. Implement the logging service with proper sanitization
+4. Ensure sensitive data is properly handled
+
+Instructions for Cline
+---------------------
+
+1. Create Logging Implementation:
+- Implement the specified interfaces
+- Add proper data sanitization
+- Ensure asynchronous logging doesn't impact performance
+- Add log rotation and retention logic
+- Implement environment-specific logging levels
+
+2. Required Test Coverage:
+```typescript
+describe('Structured Logging', () => {
+  it('should properly format log events');
+  it('should sanitize sensitive data');
+  it('should handle asynchronous logging');
+  it('should respect environment log levels');
+  it('should maintain proper error context');
+});
+```
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Logging working correctly in all environments
+- Test coverage complete and passing
+- Proper data sanitization implemented
+- Performance impact minimized
+
+For User:
+- Clear visibility into authentication events
+- Proper error tracking
+- Effective troubleshooting capability
+- Privacy requirements maintained
+

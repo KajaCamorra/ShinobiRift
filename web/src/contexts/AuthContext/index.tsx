@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useCallback, useEffect, useState } from 'react';
-import { AuthContextType, AuthUser, LoginResult } from './types';
+import { AuthContextType, AuthUser, LoginResult, CsrfValidationError } from './types';
 import { useSharedSession } from '../../hooks/useSharedSession';
 import { useActivityTracking } from '../../hooks/useActivityTracking';
 
@@ -69,13 +69,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
+        credentials: 'include', // Important for CSRF cookie handling
         body: JSON.stringify({
           sessionToken: user.sessionToken,
         }),
       });
 
       if (!response.ok) {
+        if (response.status === 403) {
+          throw new CsrfValidationError('CSRF validation failed during token refresh');
+        }
         throw new Error('Failed to refresh tokens');
       }
 
@@ -137,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           headers: {
             'Content-Type': 'application/json',
           },
-          credentials: 'include'
+          credentials: 'include', // Important for CSRF cookie handling
         });
       }
 

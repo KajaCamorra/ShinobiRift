@@ -29,3 +29,11 @@ export interface AuthContextType {
   refreshTokens: () => Promise<void>;
   debugLogin?: () => Promise<void>;
 }
+
+// Error types for CSRF validation failures
+export class CsrfValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CsrfValidationError';
+  }
+}

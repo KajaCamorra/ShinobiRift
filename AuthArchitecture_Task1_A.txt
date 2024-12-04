@@ -1,0 +1,96 @@
+Task A: CSRF Protection Implementation
+Note to Cline: Ignore the instructions "for User". Those are my tasks, only the parts for "Cline" should be touched by you!
+====================================
+
+What We Want to Do
+-----------------
+Implement Cross-Site Request Forgery (CSRF) protection for our authentication system to prevent unauthorized cross-origin requests while maintaining compatibility with our existing authentication flow.
+
+Why We Want to Do It
+-------------------
+CSRF protection is a critical security measure that prevents malicious websites from triggering unauthorized actions in our application using a user's valid session. This is especially important for our authentication endpoints which handle sensitive operations.
+
+How We Want to Do It
+-------------------
+
+### Part 1: CSRF Token Structure
+
+Required Implementation (For Cline):
+```typescript
+interface CsrfToken {
+  token: string;        // The actual token value
+  sessionId: string;    // Associated session ID
+  issuedAt: number;     // Unix timestamp of creation
+  expiresAt: number;    // Unix timestamp of expiration
+}
+
+interface CsrfConfig {
+  headerName: 'X-CSRF-Token';
+  cookieName: 'csrf_token';
+  ignoredMethods: ['GET', 'HEAD', 'OPTIONS'];
+  tokenLength: 32;      // Length in bytes
+  expiryTime: 3600;     // One hour in seconds
+}
+```
+
+These interfaces must be implemented exactly as shown because:
+- They provide the minimum required security properties for CSRF protection
+- They maintain compatibility with our session management system
+- They enable proper token validation and renewal
+- They define standard naming conventions needed for middleware integration
+
+Implementation Guidance for Cline:
+1. Review our current authentication middleware implementation
+2. Check for any existing CSRF protection mechanisms
+3. Examine how our current session handling might interact with CSRF tokens
+
+### Part 2: CSRF Service
+
+Required Implementation (For Cline):
+```typescript
+interface CsrfService {
+  generateToken(sessionId: string): Promise<CsrfToken>;
+  validateToken(sessionId: string, token: string): Promise<boolean>;
+  refreshToken(oldToken: CsrfToken): Promise<CsrfToken>;
+}
+```
+
+This interface must be implemented exactly as shown because:
+- It defines the core CSRF protection operations
+- It maintains consistency with our session management
+- It supports our token refresh requirements
+
+Instructions for Cline
+---------------------
+
+1. Create Base Implementation:
+- Implement the CsrfToken and CsrfConfig interfaces
+- Create the CsrfService implementation
+- Add proper error handling
+- Implement unit tests
+
+2. Required Test Coverage:
+```typescript
+describe('CSRF Protection', () => {
+  it('should generate valid CSRF tokens');
+  it('should validate correct tokens');
+  it('should reject invalid tokens');
+  it('should handle token expiration');
+  it('should refresh tokens properly');
+});
+```
+
+Success Criteria
+---------------
+
+For Cline:
+- All specified interfaces implemented exactly
+- Tests passing for all scenarios
+- Error handling implemented
+- Proper integration with existing session management
+
+For User:
+- CSRF protection verified in browser
+- Token refresh working correctly
+- Security requirements met
+
