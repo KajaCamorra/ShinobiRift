@@ -1,5 +1,4 @@
-using System.Collections.Concurrent;
-using StackExchange.Redis;
+using ShinobiRift.Api.Services;
 
 namespace ShinobiRift.Api.Middleware
 {
@@ -7,39 +6,39 @@ namespace ShinobiRift.Api.Middleware
     {
         private readonly RequestDelegate _next;
         private readonly ILogger<RateLimitingMiddleware> _logger;
-        private readonly IConnectionMultiplexer _redis;
-        private const int MAX_REQUESTS = 100;
-        private const int WINDOW_MINUTES = 1;
+        private readonly IRateLimitService _rateLimitService;
+        private readonly string _environment;
 
         public RateLimitingMiddleware(
             RequestDelegate next,
             ILogger<RateLimitingMiddleware> logger,
-            IConnectionMultiplexer redis)
+            IRateLimitService rateLimitService,
+            IConfiguration configuration)
         {
             _next = next;
             _logger = logger;
-            _redis = redis;
+            _rateLimitService = rateLimitService;
+            _environment = configuration.GetValue<string>("Environment", "Development");
         }
 
         public async Task InvokeAsync(HttpContext context)
         {
-            var key = GetClientKey(context);
-            var db = _redis.GetDatabase();
-            var windowKey = $"ratelimit:{key}:{DateTime.UtcNow:yyyyMMddHHmm}";
-
-            var currentCount = await db.StringIncrementAsync(windowKey);
-            if (currentCount == 1)
+            var key = new RateLimitKey
             {
-                await db.KeyExpireAsync(windowKey, TimeSpan.FromMinutes(WINDOW_MINUTES));
-            }
+                Type = context.User?.Identity?.IsAuthenticated == true ? "userId" : "ip",
+                Value = GetClientIdentifier(context),
+                Environment = _environment,
+                IsCsrf = false // Regular API request
+            };
 
-            context.Response.Headers.Add("X-RateLimit-Limit", MAX_REQUESTS.ToString());
-            context.Response.Headers.Add("X-RateLimit-Remaining", Math.Max(0, MAX_REQUESTS - currentCount).ToString());
-            context.Response.Headers.Add("X-RateLimit-Reset", GetResetTime().ToString());
+            var result = await _rateLimitService.IsAllowedAndRecord(key);
 
-            if (currentCount > MAX_REQUESTS)
+            context.Response.Headers.Add("X-RateLimit-Remaining", result.Remaining.ToString());
+            context.Response.Headers.Add("X-RateLimit-Reset", result.ResetTime.ToString());
+
+            if (!result.Allowed)
             {
-                _logger.LogWarning("Rate limit exceeded for client {ClientKey}", key);
+                _logger.LogWarning("Rate limit exceeded for client {ClientKey}", key.Value);
                 context.Response.StatusCode = 429; // Too Many Requests
                 await context.Response.WriteAsJsonAsync(new { message = "Too many requests. Please try again later." });
                 return;
@@ -48,19 +47,15 @@ namespace ShinobiRift.Api.Middleware
             await _next(context);
         }
 
-        private string GetClientKey(HttpContext context)
+        private string GetClientIdentifier(HttpContext context)
         {
-            return context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                ?? context.Request.Headers["X-User-Id"].ToString()
-                ?? context.Connection.RemoteIpAddress?.ToString()
-                ?? "anonymous";
-        }
+            if (context.User?.Identity?.IsAuthenticated == true)
+            {
+                return context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? "anonymous";
+            }
 
-        private static long GetResetTime()
-        {
-            var now = DateTime.UtcNow;
-            var nextWindow = now.AddMinutes(1).AddSeconds(-now.Second).AddMilliseconds(-now.Millisecond);
-            return ((DateTimeOffset)nextWindow).ToUnixTimeSeconds();
+            return context.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
         }
     }
 

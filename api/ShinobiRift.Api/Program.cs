@@ -157,7 +157,8 @@ public class Program
         builder.Services.AddSingleton<ITokenService, TokenService>();
         builder.Services.AddSingleton<ISessionService, SessionService>();
         builder.Services.AddSingleton<IDiscordAuthService, DiscordAuthService>();
-        builder.Services.AddSingleton<ICsrfTokenService, CsrfTokenService>(); // Add CSRF service
+        builder.Services.AddSingleton<ICsrfTokenService, CsrfTokenService>();
+        builder.Services.AddSingleton<IRateLimitService, RateLimitService>(); // Add Rate Limit service
         builder.Services.AddHostedService<ActivityCleanupService>();
 
         // Configure HttpClient for Discord API
@@ -193,6 +194,9 @@ public class Program
 
         // Use CORS before auth middleware
         app.UseCors();
+
+        // Use rate limiting before authentication
+        app.UseRateLimiting();
 
         // Use authentication and authorization
         app.UseAuthentication();
